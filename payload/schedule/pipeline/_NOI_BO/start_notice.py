@@ -20,6 +20,10 @@ def infer_start(sentence, program, fn, episode=None):
         if block==6 and block not in active: active.insert(active.index(7),6)
         for token in (code,show.get('code','').upper(),f"SHOW {show.get('slot',slot)}"):
             aliases.setdefault(token,set()).add(block)
+        # Explicit cooking-show title supports the VEGC notice abbreviation.
+        title=show.get('code','').casefold()
+        if 'veganism' in title and 'cooking' in title:
+            aliases.setdefault('VEGC',set()).add(block)
         # When a show moves because of FN, accept its original and output slot labels.
         aliases.setdefault(f'SHOW {slot}',set()).add(block)
         aliases.setdefault('SHOW',set()).add(block)
@@ -33,13 +37,16 @@ def infer_start(sentence, program, fn, episode=None):
         first=min(p for p,_,_ in found)
         longest=max(length for p,length,_ in found if p==first)
         return set().union(*(bs for p,length,bs in found if p==first and length==longest))
+    def unknown(part,position):
+        accepted=', '.join(sorted(token for token,blocks in aliases.items() if blocks & set(active)))
+        return None, ('Cannot identify '+position+': '+part.strip()+'\n\nReason: no recognized program code matches this text in the current EP.\nAccepted names/codes: '+accepted+'\n\nCheck the notice against INPUT, or select Start block manually.')
     starts=find(halves[0]) & set(active)
-    if not starts: return None, 'Chưa nhận diện được chương trình bắt đầu.'
+    if not starts: return unknown(halves[0],'starting program')
     for offset,part in enumerate(halves[1:],1):
         next_blocks=find(part) & set(active)
-        if not next_blocks: return None, 'Chưa nhận diện được chương trình sau “followed by”.'
+        if not next_blocks: return unknown(part,'following program')
         starts={b for b in starts if active[(active.index(b)+offset)%len(active)] in next_blocks}
-        if not starts: return None, 'Cặp chương trình chưa khớp thứ tự block hiện tại; cần kiểm tra thứ tự hoặc chọn block tay.'
+        if not starts: return None, ('Programs were recognized, but their order does not match this EP.\nNotice: '+sentence+'\nCurrent block order: '+' -> '.join(map(str,active))+'\nCheck INPUT / the notice, or select Start block manually.')
     if len(starts)!=1: return None, 'Có nhiều vị trí phù hợp; thêm “followed by …” hoặc chọn block tay.'
     block=next(iter(starts))
     return block, f'→ Block {block} (đã đối chiếu chương trình kế tiếp)' if len(halves)>1 else f'→ Block {block}'

@@ -75,10 +75,22 @@ def proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, s
     return clean_local_filename(canonical_no_next(name)),rule
 
 
+def normalize_episode_order(stem, program=None):
+    """Canonicalize CODE EP to EP CODE; leave title numbers and teaser dates alone."""
+    codes={'NWN','BMD','WOW','AP','DN','SHOW','VEGC','VEG','GPGW','AJAR','NB','AW'}
+    for show in (program or {}).get('active_shows',[]):
+        code=show_code(show.get('code','')).upper()
+        if code and re.fullmatch(r'[A-Z][A-Z0-9]*',code):codes.add(code)
+    pattern='|'.join(re.escape(c) for c in sorted(codes,key=len,reverse=True))
+    return re.sub(rf'^({pattern})[ _-]+(\d{{4}})(?=[ _-]|$)',
+                  lambda m:m[2]+' '+m[1].upper(),stem,flags=re.I)
+
+
 def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, str]:
     """Return a conservative local filename and the rule used to obtain it."""
     stem = Path(source_name).stem
     stem = re.sub(r'[_]+', ' ', stem)
+    stem = normalize_episode_order(stem, program)
     stem = re.sub(r'\bNWN\s+(?:SEG(?:MENT)?|S)\s*([123])\s*([ABC]?)(?=\s|[.(]|$)',
                   lambda m:'NWN SEG '+m[1]+m[2].upper(), stem, flags=re.I)
     upper = stem.upper()
@@ -202,7 +214,7 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
     sources = sorted(source_dir.glob("*.mp4"), key=lambda p: p.name.lower())
     # Only fall back one day, never silently take day one's new-event set.
     fn_enabled = program.get("schedule_type") == "FN"
-    has_fn = lambda p: bool(re.search(r"NWN[ _]+(?:SEG(?:MENT)?|S)[ _]*1[ _]*B\b", p.name, re.I))
+    has_fn = lambda p: bool(re.search(r"NWN[ _]+(?:SEG(?:MENT)?|S)[ _]*1[ _]*B\b", normalize_episode_order(p.name, program), re.I))
     fn_source_episode = episode
     if fn_enabled and not any(has_fn(p) for p in sources):
         previous = source_dir.parent / f"EP {episode - 1}"
@@ -213,13 +225,13 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         sources.extend(fallback)
         fn_source_episode = episode - 1 if fallback else None
     # A real Daily Scroll supersedes DN TEMP; they are not two schedule slots.
-    if any(re.search(r"NWN DAILY SCROLL", p.name, re.I) for p in sources):
+    if any(re.search(r"NWN DAILY SCROLL", normalize_episode_order(p.name, program), re.I) for p in sources):
         sources = [p for p in sources if p.stem.upper() != f"{episode} DN TEMP"]
     for source in sources:
         if program.get('wow_has_intro_outro') is False and re.search(r'\bWOW\s+(?:INTRO|OUTRO)\b',source.name,re.I):continue
         source_episode = episode - 1 if has_fn(source) and source.parent != source_dir else episode
         if has_fn(source):
-            prefix=re.match(r'(\d{4})\b',source.name)
+            prefix=re.match(r'(\d{4})\b',normalize_episode_order(source.name, program))
             if prefix:source_episode=int(prefix[1])
         target_name, rule = proposed_name(source.name, source_episode, program)
         rows.append({
@@ -296,7 +308,7 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         if source.name in draft_targets:continue
         local_ep=episode
         if has_fn(source):
-            prefix=re.match(r'(\d{4})\b',source.name)
+            prefix=re.match(r'(\d{4})\b',normalize_episode_order(source.name, program))
             if prefix:local_ep=int(prefix[1])
         target_name,rule=proposed_name(source.name,local_ep,program)
         if source_fn_teaser and is_fn_teaser(target_name):continue

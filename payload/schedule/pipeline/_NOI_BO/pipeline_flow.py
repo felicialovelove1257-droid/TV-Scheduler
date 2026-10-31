@@ -128,3 +128,19 @@ SECTIONS.append(('Cột thời gian All cycles', 'All cycles: Length là thời 
 SECTIONS.append(('Dịch vị trí MT theo số show', 'MT shift (shows) chọn từ -5 đến +5 và nhớ lần chọn cuối. 0 dùng vị trí tự động bình thường. Số âm chọn ranh giới sớm hơn, số dương muộn hơn đúng số show so với kết quả tự động của cùng dữ liệu. Một show tính theo block, không theo segment hay ADS. Sau khi chọn ranh giới, tính lại Max/ADS và cuối ngày; mốc giờ MT vẫn giữ như cũ. Nếu không canh được ±15 giây thì báo QC, không tự bỏ lựa chọn và nhảy sang show khác. Ngoài số show đã dựng thì báo lỗi.'))
 
 SECTIONS.append(('Cập nhật chương trình qua GitHub', 'Update PIP kiểm tra và tải các file chương trình đã thay đổi. INPUT.xlsx chỉ được thay khi tích chọn; sao lưu trước khi thay. Đóng Scheduler rồi áp dụng cập nhật và mở lại. Khi áp dụng lỗi sẽ cố gắng phục hồi bản trước và báo lỗi. Không thay ADS, EP, playlist, cấu hình hoặc lịch sử nhận diện. Máy chưa có nút này cần nhận bộ portable mới một lần.'))
+
+SECTIONS.append(('Thư mục trong cửa sổ file thiếu', 'Cột Folder giữa Type và File / QC issue hiển thị nguyên tiêu đề nhóm ADS trong INPUT để tìm thư mục nguồn. Đây là gợi ý theo bảng, không phải đường dẫn đã xác minh. Mục không có tiêu đề nhóm hiển thị dấu gạch ngang.'))
+
+SECTIONS.append(('Bỏ qua ADS trong ngày', 'Trong cửa sổ file thiếu, Skip today cạnh Browse bỏ ADS khỏi EP đang làm, kể cả ADS ưu tiên và ADS bù cuối ngày. Lưu riêng theo EP; ngày khác không bị ảnh hưởng. Bấm Recheck and continue để tính lại. Undo skip hoặc Browse thành công trên dòng đang mở sẽ hủy bỏ qua. Không xóa file và không đổi bảng nhận diện chung.'))
+
+SECTIONS.append(('Start notice diagnostics', 'Unknown program notices show the unrecognized text, accepted program codes for the current EP and how to correct it. VEGC is accepted for an active Veganism Cooking Show. Recognized programs in the wrong order report the current block order.'))
+
+SECTIONS.append(('VEGC and NWN filename recognition', 'Veganism Cooking Show uses VEGC in source naming, schedule blocks and BMD UP NXT selection. NWN filenames with the EP after NWN, such as NWN 3316 SEG 1A, are normalized to the same segment names as 3316 NWN SEG 1A. Rescan and create EP again after changing recognition rules.'))
+
+SECTIONS.append(('Episode number before or after program code', 'Recognizes both EP CODE and CODE EP filename prefixes for NWN, BMD, WOW, AP, DN and active show codes. FN set detection and manual FN selection accept both orders. Numbers inside titles and teaser episode numbers are preserved.'))
+
+SECTIONS.append(('Fallback teaser between segments', 'When a required segment gap has no available regular teaser or short ADS, use a valid teaser for this airing day under 120 seconds. Prefer the least-used teaser; repetition is allowed only for this fallback. Next-day EP, AP campaign phase and FN checkbox eligibility still apply. If none is short enough, report the missing insertion.'))
+
+SECTIONS.append(('Consistency checks for source names and skipped ADS', 'IN/MAIN/OUT role detection accepts CODE EP as well as EP CODE. ADS skipped for the current EP are also blocked by reserve-catalog name matching. Regular short ADS are used before the emergency teaser fallback; fallback still requires a valid airing-day teaser shorter than 120 seconds.'))
+
+SECTIONS.append(('Missing daily ADS input', 'The first Run all check warns when INPUT_3 has no row for the current EP, or when that row exists but contains no ADS. Update and save INPUT.xlsx, stop Run all and Scan EP again. Continuing remains a deliberate choice.'))

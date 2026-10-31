@@ -24,11 +24,24 @@ def source_choices(episode):
     return json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
 
 
+def skipped_ads(episode):
+    return source_choices(episode).get('skipped_ads',[])
+
+
+def set_ad_skip(episode,name,skip=True):
+    from schedule_assets import filename_key
+    data=source_choices(episode)
+    data['skipped_ads']=[n for n in data.get('skipped_ads',[]) if filename_key(n)!=filename_key(name)]
+    if skip:data['skipped_ads'].append(name)
+    atomic_json(choices_path(episode),data)
+
+
 def fn_set(selected):
     """Use event identity, not the entire folder, to avoid mixing FN sets."""
     selected=Path(selected)
     def identity(path):
-        name=path.stem.upper().replace('_',' ')
+        from episode_scanner import normalize_episode_order
+        name=normalize_episode_order(path.stem).upper().replace('_',' ')
         if not re.search(r'NWN[ _]+(?:SEG(?:MENT)?|S)[ _]*1[ _]*B\b',name):return None
         ep=re.match(r'(\d{4})\b',name)
         part=re.search(r'\bP(?:ART)?[ _]*(\d+)([A-Z]?)\b',name)
@@ -153,6 +166,11 @@ def issues(config, result=None):
     items=items+selected
     available=[r['target_name'] for r in items if r.get('draft_duration') or Path(r['source_path']).is_file() or Path(r['target_path']).is_file()]
     settings=config.get('schedule_settings',{});out=[]
+    ads_info=config.get('ads',{})
+    if ads_info.get('source_row') is None:
+        out.append(dict(kind='qc',name=f"INPUT_3 has no ADS row for EP {config['episode']}.",detail='Update and save INPUT.xlsx, then stop Run all and Scan EP again. The daily ADS list is unavailable; MT fitting may fail.'))
+    elif not ads_info.get('items'):
+        out.append(dict(kind='qc',name=f"INPUT_3: the ADS row for EP {config['episode']} is empty.",detail='Check whether this day intentionally has no ADS. If not, update INPUT.xlsx and Scan EP again.'))
     if settings.get('fn') and not any(re.search(r'\bNWN S1B\b',n,re.I) for n in available):
         out.append(dict(kind='fn',name='FN S1B set',detail='Choose P1A to load its complete set.'))
     teasers=[n for n in available if re.match(r'^(TSER|TEASER) ',n,re.I) and eligible_teaser(n,config['episode'])]
@@ -181,11 +199,23 @@ def issues(config, result=None):
             # Known file issues already have selectable rows above. Other QC
             # problems (timing, segment gaps, placeholders) remain visible.
             out.append(dict(kind='qc',name=message,detail='Review QC / INPUT; Retry after corrections.'))
+    # Keep the INPUT column heading as a search hint, not a guessed path.
+    from schedule_assets import key
+    folders={}
+    for ad in config.get('ads',{}).get('items',[]):
+        category=str(ad.get('category') or '').strip()
+        if category:
+            values=folders.setdefault(key(ad['name']),[])
+            if category not in values:values.append(category)
+    for issue in out:
+        issue['folder']=' / '.join(folders.get(key(issue['name']),[])) if issue['kind']=='ad' else ''
+    for issue in out:
+        issue['skipped']=issue['kind']=='ad' and assets.is_skipped(issue['name'])
     seen=set();return_rows=[]
     for r in out:
         k=(r['kind'],r['name'])
         if k not in seen:seen.add(k);return_rows.append(r)
-    return return_rows
+    return [r for r in return_rows if not r.get('skipped')]
 
 
 def resolve_dialog(parent, config, result=None):
@@ -195,7 +225,7 @@ def resolve_dialog(parent, config, result=None):
     import threading,queue
     pending=issues(config,result)
     if not pending:return 'continue',False
-    window=tk.Toplevel(parent);window.title('Run all - missing files and QC');window.geometry('1100x590')
+    window=tk.Toplevel(parent);window.title('Run all - missing files and QC');window.geometry('1250x590')
     window.transient(parent);window.grab_set()
     ttk.Label(window,text='Browse beside each item. FN: select P1A to load its set. Green check = file selection checked and saved.').pack(anchor='w',padx=12,pady=10)
     frame=ttk.Frame(window);frame.pack(fill='both',expand=True,padx=12)
@@ -206,8 +236,8 @@ def resolve_dialog(parent, config, result=None):
     table.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
     canvas.bind('<Configure>',lambda e:canvas.itemconfigure(item,width=e.width))
     window.bind('<MouseWheel>',lambda e:canvas.yview_scroll(int(-e.delta/120),'units'))
-    table.columnconfigure(1,weight=3);table.columnconfigure(2,weight=2)
-    for col,label in enumerate(('Type','File / QC issue','Status','Select file')):
+    table.columnconfigure(2,weight=3);table.columnconfigure(3,weight=2)
+    for col,label in enumerate(('Type','Folder','File / QC issue','Status','Select file')):
         ttk.Label(table,text=label,font=('Segoe UI',10,'bold')).grid(row=0,column=col,sticky='w',padx=8,pady=8)
     status=tk.StringVar();ttk.Label(window,textvariable=status,wraplength=1040).pack(fill='x',padx=12,pady=8)
     buttons=ttk.Frame(window);buttons.pack(fill='x',padx=12,pady=10)
@@ -217,6 +247,15 @@ def resolve_dialog(parent, config, result=None):
     def finish(answer):
         if state['busy']:return
         state['answer']=answer;window.destroy()
+    def toggle_skip(idx):
+        if state['busy']:return
+        issue=pending[idx];skip=not issue.get('skipped',False)
+        set_ad_skip(config['episode'],issue['name'],skip)
+        issue['skipped']=skip;state['changed']=True
+        skip_buttons[idx].configure(text='Undo skip' if skip else 'Skip today')
+        row_status(idx,'Skipped for this EP — will not be used.' if skip else 'Missing / not recognized',skip)
+        status.set('Saved. Click Recheck and continue to rebuild the schedule.')
+    skip_buttons={}
     def choose(idx,folder=False):
         if state['busy']:return
         issue=pending[idx]
@@ -244,6 +283,9 @@ def resolve_dialog(parent, config, result=None):
             for child in controls:child.configure(state='normal')
             if ok:
                 state['changed']=True
+                if issue['kind']=='ad':
+                    set_ad_skip(config['episode'],issue['name'],False)
+                    issue['skipped']=False;skip_buttons[idx].configure(text='Skip today')
                 row_status(idx,'✓ Checked and saved\n'+selected,True)
                 status.set('Saved: '+', '.join(r['target_name'] for r in value))
             else:row_status(idx,'✗ '+value);status.set('Selection failed; choose another file or retry.')
@@ -251,13 +293,17 @@ def resolve_dialog(parent, config, result=None):
     for i,r in enumerate(pending):
         row=i+1
         ttk.Label(table,text=r['kind'].upper()).grid(row=row,column=0,sticky='nw',padx=8,pady=9)
-        ttk.Label(table,text=r['name'],wraplength=440).grid(row=row,column=1,sticky='nw',padx=8,pady=9)
+        ttk.Label(table,text=r.get('folder') or '—',wraplength=170).grid(row=row,column=1,sticky='nw',padx=8,pady=9)
+        ttk.Label(table,text=r['name'],wraplength=380).grid(row=row,column=2,sticky='nw',padx=8,pady=9)
         ready=r.get('ready',False)
         label=ttk.Label(table,text=('✓ Found — can replace' if ready else '✗ '+('Needs review' if r['kind']=='qc' else 'Missing / not recognized'))+'\n'+r['detail'],wraplength=320,foreground='#168047' if ready else '#b3261e')
-        label.grid(row=row,column=2,sticky='nw',padx=8,pady=9);labels[i]=label
+        label.grid(row=row,column=3,sticky='nw',padx=8,pady=9);labels[i]=label
         if r['kind']!='qc':
-            actions=ttk.Frame(table);actions.grid(row=row,column=3,sticky='ne',padx=8,pady=9)
+            actions=ttk.Frame(table);actions.grid(row=row,column=4,sticky='ne',padx=8,pady=9)
             button=ttk.Button(actions,text='Browse...',command=lambda idx=i:choose(idx));button.pack(side='left');controls.append(button)
+            if r['kind']=='ad':
+                button=ttk.Button(actions,text='Undo skip' if r.get('skipped') else 'Skip today',command=lambda idx=i:toggle_skip(idx));button.pack(side='left',padx=4);controls.append(button);skip_buttons[i]=button
+                if r.get('skipped'):row_status(i,'Skipped for this EP — will not be used.',True)
             if r['kind']=='fn':
                 button=ttk.Button(actions,text='Folder...',command=lambda idx=i:choose(idx,True));button.pack(side='left',padx=4);controls.append(button)
     for text,answer in [('Stop Run all','cancel'),('Continue / view QC','continue'),('Recheck and continue','retry')]:

@@ -91,10 +91,11 @@ def teaser_key(cycle, path):
     return cycle, str(path).casefold()
 
 
-def fill_segment_gaps(rows, teasers, options, assets, make, missing):
+def fill_segment_gaps(rows, teasers, options, assets, make, missing, fallback_teasers=()):
     result=[]
     short_teasers=[p for p in teasers if 0<assets.duration(p)<120]
     short_ads=[p for p in options if 0<assets.duration(p)<120]
+    fallback=[p for p in dict.fromkeys(fallback_teasers) if 0<assets.duration(p)<120]
     from collections import Counter
     used=Counter(teaser_key(r['cycle'],r['path']) for r in rows if r.get('kind')=='teaser')
     used_ads={(r['cycle'],str(r.get('path','')).casefold()) for r in rows if r.get('kind') in INSERT_KINDS}
@@ -105,10 +106,15 @@ def fill_segment_gaps(rows, teasers, options, assets, make, missing):
         if following.get('kind') in INSERT_KINDS: continue
         available=[p for p in short_teasers if used[teaser_key(r['cycle'],p)]<teaser_limit(p)]
         choices=available or [p for p in short_ads if teaser_key(r['cycle'],p) not in used_ads]
+        fallback_used=False
+        if not choices and fallback:
+            choices=sorted(fallback,key=lambda p:used[teaser_key(r['cycle'],p)])
+            available=choices;fallback_used=True
         if not choices:
             missing.append(f"Cycle {r['cycle']}: cần teaser/ADS dưới 2 phút sau {r['name']}")
             continue
         extra=make(choices[0],r['cycle'],r['block'],'teaser' if available else 'optional')
+        if fallback_used:extra['segment_teaser_fallback']=True
         if available: used[teaser_key(r['cycle'],choices[0])]+=1
         used_ads.add(teaser_key(r['cycle'],choices[0]))
         extra['boundary']=r.pop('boundary','nwn_segment')
@@ -464,6 +470,7 @@ def finish_schedule(config, output, assets, directory):
     def make(path,cycle,block,kind):
         return dict(cycle=cycle,block=block,name=path.name,path=str(path),duration=assets.duration(path),kind=kind)
     def resolve(name,required=True):
+        if assets.is_skipped(name):return None
         p=assets.resolve(name)
         if not p and required: missing.append('Thiếu file: '+name)
         return p
@@ -555,6 +562,7 @@ def finish_schedule(config, output, assets, directory):
     profile_insertions = {}
     active_ads = {item['name'] for item in config.get('ads',{}).get('items',[])}
     for item in profile_items:
+        if assets.is_skipped(item['name']):continue
         if item['name'] not in active_ads:
             missing.append('ADS profile cần cập nhật theo bảng đầu vào: '+item['name'])
             continue
@@ -584,6 +592,7 @@ def finish_schedule(config, output, assets, directory):
     flat=expanded
     for ad in config.get('ads',{}).get('items',[]):
         name=ad['name']; priority=ad['priority_class']
+        if assets.is_skipped(name):continue
         if name in profiled_names: continue
         if re.search(r'M QY Warn|Daily News Scroll|AD_SMTV INTRO',name,re.I): continue
         p=assets.resolve(name); paths=[p] if p else specials.get(name,[])
@@ -597,7 +606,8 @@ def finish_schedule(config, output, assets, directory):
     from mt_local import repeat_cycle_ads, optimize_near_mt
     combined=repeat_cycle_ads(flat,pending,make,missing)
     flat,slot_moves,unplaced=allocate_single_slots(mark_insert_slots(combined))
-    flat=fill_segment_gaps(flat,ts_fn+ts_other+ts_slot if output['fn'] else ts_other+ts_slot,optional,assets,make,missing)
+    fallback_teasers=[p for p in teasers if (not is_fn_teaser(p.name) or need_fn) and (p not in all_ap or p in ts_ap)]
+    flat=fill_segment_gaps(flat,ts_fn+ts_other+ts_slot if output['fn'] else ts_other+ts_slot,optional,assets,make,missing,fallback_teasers)
     # AP campaign is additional when a next-day WOW teaser is also required.
     if campaign and len(ts_ap)==1:
         for cycle in sorted({r['cycle'] for r in flat}):

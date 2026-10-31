@@ -66,7 +66,23 @@ class Assets:
         for name,path in self.ad_profile.get('aliases',{}).items():
             self.mapping.setdefault(key(name),{local_path(path)})
 
+        from missing_media import skipped_ads
+        names=skipped_ads(config['episode'])
+        self.skipped_names={filename_key(n) for n in names}
+        for name in names:
+            path=self._resolve_unfiltered(name)
+            if path:self.skipped_names.add(filename_key(path.name))
+        self.files=[p for p in self.files if not self.is_skipped(p.name)]
+
+    def is_skipped(self,name):
+        return filename_key(name) in self.skipped_names
+
     def resolve(self, name):
+        if self.is_skipped(name):return None
+        path=self._resolve_unfiltered(name)
+        return None if path and self.is_skipped(path.name) else path
+
+    def _resolve_unfiltered(self, name):
         aliases = {'m qy warning': 'M QY Warn', 'hygiene': 'Gen Hyg Notes',
                    'abortion 07': 'AD_Abortion 07 Crime'}
         k = key(name)

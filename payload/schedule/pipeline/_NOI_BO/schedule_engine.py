@@ -266,6 +266,8 @@ def build_schedule(config_path: Path) -> dict:
 
 
 def show_code(text):
+    normalized=re.sub(r'[^a-z0-9]+','',text.casefold())
+    if 'veganism' in normalized and 'cookingshow' in normalized:return 'VEGC'
     aliases = {"nature's beauty": 'NB', 'veganism: the noble way of living': 'VEG',
                'animal world': 'AW', 'a journey through aesthetic realms': 'AJAR'}
     return aliases.get(text.casefold(), text.split()[0] if text else '')

@@ -9,6 +9,8 @@ def show_part(name,code):
     match=re.search(r'\b'+re.escape(code)+r'\b',text,re.I)
     if not match:return None
     tail=text[match.end():].strip()
+    # CODE EP IN/MAIN/OUT has the same role as EP CODE IN/MAIN/OUT.
+    tail=re.sub(r'^\d{4}(?:\s+|$)','',tail)
     part=re.match(r'^(INTRO|OUTRO|MAIN|IN|OUT)(?=\s|$|[.(])',tail,re.I)
     if part:return {'INTRO':'IN','OUTRO':'OUT'}.get(part[1].upper(),part[1].upper())
     suffix=re.sub(r'\s*\([^)]*\)|\s+v\d+\b','',tail,flags=re.I).strip()

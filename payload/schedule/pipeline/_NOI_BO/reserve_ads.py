@@ -36,6 +36,7 @@ def read_catalog(rows):
     return entries
 
 def resolve_entry(entry,assets):
+    if assets.is_skipped(entry['name']):return None,'skipped_for_episode',[]
     # Confirmed mappings take precedence over normalized matches.
     path=assets.resolve(entry['name'])
     if path:return path,'mapped_or_exact',[]
@@ -43,12 +44,16 @@ def resolve_entry(entry,assets):
     folder=normalized(entry.get('folder',''))
     in_folder=[p for p in candidates if normalized(p.parent.name)==folder]
     candidates=list(dict.fromkeys(in_folder or candidates))
-    if len(candidates)==1:return candidates[0],'normalized_unique',[]
+    if len(candidates)==1:
+        if assets.is_skipped(candidates[0].name):return None,'skipped_for_episode',[]
+        return candidates[0],'normalized_unique',[]
     if not candidates:
         candidates=[p for p in assets.files
                     if normalized(p.parent.name)==folder
                     and content_key(p.name,entry.get('folder',''))==content_key(entry['name'],entry.get('folder',''))]
-        if len(candidates)==1:return candidates[0],'abbreviation_unique',[]
+        if len(candidates)==1:
+            if assets.is_skipped(candidates[0].name):return None,'skipped_for_episode',[]
+            return candidates[0],'abbreviation_unique',[]
     return None,'ambiguous' if candidates else 'unresolved',[str(p) for p in candidates]
 
 def audit_catalog(entries,assets):
