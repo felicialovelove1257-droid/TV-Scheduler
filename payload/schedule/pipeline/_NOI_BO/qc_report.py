@@ -137,6 +137,8 @@ def render_qc(result):
     issues=[s for s in result.get('missing',[]) if not s.startswith(('Chưa đạt 20:00','Cuối ngày chưa vào khoảng'))]
     for s in issues:
         s=s.replace('source/path','file nguồn hoặc đường dẫn').replace('Slot bị trùng','Hai mục chèn đang nằm sát nhau')
+        if s == 'NWN Daily Scroll':
+            s = 'Thiếu file NWN Daily Scroll — cần bổ sung Daily Scroll hoặc DN TEMP của EP này.'
         lines.append(('⚠ ' if draft_notice(s) else '✗ ')+s)
     if not issues: lines.append('✓ Các kiểm tra còn lại không báo lỗi.')
     conflicts=result.get('insertion_conflict_count',0)

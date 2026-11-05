@@ -67,6 +67,8 @@ def _optimize_near_mt(rows, options, assets, target, optimize, assign, allow_pri
             # Cycle immediately before MT is selected naturally when MT is at its end.
             prefix=rows[:end+1]
             free=[i for i,r in enumerate(prefix) if r.get('free_slot') and r['cycle'] in allowed]
+            from smtv_intro import start_slots
+            free += [-i-1 for i in start_slots(prefix) if prefix[i]['cycle'] in allowed]
             def required_gap(index):
                 anchor=next((p for p in reversed(prefix[:index]) if p.get('kind')=='program'),None)
                 return bool(anchor and anchor.get('required_insert'))
@@ -108,7 +110,8 @@ def _optimize_near_mt(rows, options, assets, target, optimize, assign, allow_pri
                     new_end=index_map.get(end)
                     if new_end is None:continue
                     for r in trial:
-                        if r['cycle'] not in allowed:r.pop('free_slot',None)
+                        if r['cycle'] not in allowed:
+                            r.pop('free_slot',None);r['_intro_disabled']=True
                     placements=assign(trial[:new_end+1],ads,assets)
                     if placements is None:continue
                     changes=[];destinations={}

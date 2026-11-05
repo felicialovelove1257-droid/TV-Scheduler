@@ -13,6 +13,8 @@ from pathlib import Path
 
 BASE=Path(__file__).resolve().parent
 TRANSLATIONS=json.loads((BASE/'english_translations.json').read_text('utf-8'))
+from qc_translations_en import TRANSLATIONS as QC_TRANSLATIONS
+TRANSLATIONS.update(QC_TRANSLATIONS)
 
 class TranslateStrings(ast.NodeTransformer):
     def visit_Constant(self,node):
@@ -30,15 +32,16 @@ class EnglishLoader(importlib.abc.Loader):
 
 class EnglishFinder(importlib.abc.MetaPathFinder):
     def find_spec(self,fullname,path=None,target=None):
-        if '.' in fullname or fullname=='english_ui':return None
+        if '.' in fullname or fullname in ('english_ui','ui_language'):return None
         source=BASE/(fullname+'.py')
         if source.is_file():return importlib.util.spec_from_file_location(fullname,source,loader=EnglishLoader(source))
         return None
 
 def display_text(value):
     if not isinstance(value,str):return value
+    if value in TRANSLATIONS:return TRANSLATIONS[value]
     for source,target in sorted(TRANSLATIONS.items(),key=lambda p:len(p[0]),reverse=True):
-        if source in value:value=value.replace(source,target)
+        if len(source)>=8 and source in value:value=value.replace(source,target)
     return value
 
 def install():
@@ -67,6 +70,7 @@ def install():
     Text.insert=insert
 
 if __name__=='__main__':
-    install()
+    from ui_language import get_language
+    if get_language()=='en':install()
     from episode_scanner import run_gui
     run_gui()

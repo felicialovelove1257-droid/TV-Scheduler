@@ -400,14 +400,27 @@ def swap_rounds(rows):
     return [(family,turn,groups[family,turn]) for family,turn in sorted(groups,key=lambda g:(g[0]!='NWN',g[1]))]
 
 def assign_mt_ads(rows, ads, assets):
+    from smtv_intro import is_intro,start_slots
     slots=[i for i,r in reversed(list(enumerate(rows))) if r.get('free_slot')]
+    starts=list(reversed(start_slots(rows)))
     used={(r.get('cycle'),r.get('path')) for r in rows if r.get('kind') in INSERT_KINDS}
     assigned={}
     for p in sorted(ads,key=lambda p:assets.duration(p),reverse=True):
+        if is_intro(p):
+            eligible=[i for i in starts if (rows[i]['cycle'],str(p)) not in used]
+            if not eligible:return None
+            i=eligible[0];starts.remove(i);assigned[-i-1]=p;used.add((rows[i]['cycle'],str(p)))
+            continue
         eligible=[i for i in slots if (rows[i].get('cycle'),str(p)) not in used
                   and (assets.duration(p)<120 or rows[i].get('insert_slot')!='inside_show')]
         if not eligible: return None
         i=eligible[0];slots.remove(i);assigned[i]=p;used.add((rows[i].get('cycle'),str(p)))
+    trial=[]
+    for i,row in enumerate(rows):
+        if -i-1 in assigned:trial.append(dict(kind='intro'))
+        trial.append(row)
+        if i in assigned:trial.append(dict(kind='optional'))
+    if insertion_conflicts(trial):return None
     return assigned
 
 def optimize(rows, options, assets, target, tolerance=0, repeat_options=()):
@@ -421,6 +434,8 @@ def optimize(rows, options, assets, target, tolerance=0, repeat_options=()):
         rounds=swap_rounds(rows[:end+1])
         swaps=[(round(rows[i]['alternative']['delta']*1000),i,None) for _,_,indices in rounds for i in indices]
         free=[i for i,r in enumerate(rows[:end+1]) if r.get('free_slot')]
+        from smtv_intro import start_slots
+        free += [-i-1 for i in start_slots(rows[:end+1])]
         # Optional items are used at most once daily in this first scheduling policy.
         additions=swaps+[(round(assets.duration(p)*1000),None,p) for p in dict.fromkeys(options)]
         additions += [(round(assets.duration(p)*1000),None,p) for p in repeat_options]
@@ -538,9 +553,6 @@ def finish_schedule(config, output, assets, directory):
                     expanded.append(make(ts[0],c,block,'teaser'))
                     teaser_counts[teaser_key(c,ts[0])]+=1
                 if block in (4,8) and re.search(r'NWN (S1C|S2|S3)\b',r['name']): expanded[-1]['boundary']='nwn_segment'
-            if first:
-                p=resolve('AD_SMTV INTRO')
-                if p: flat.append(make(p,c,block,'intro'))
             flat.extend(expanded)
             flat[-1]['boundary']='program'
             if first:
@@ -550,6 +562,8 @@ def finish_schedule(config, output, assets, directory):
             else: flat[-1]['free_slot']=True
             flat[-1]['boundary']='program'
         if fixed: missing.append(f'Cycle {c}: còn ADS cố định chưa có slot')
+    from event_ads import insert_events
+    flat,event_expected=insert_events(flat,config,assets,make,missing)
     manifest=Path(config['local_dir'])/'do_not_skip_ads_manifest.csv'; specials={}
     if manifest.exists():
         with manifest.open(encoding='utf-8-sig',newline='') as f:
@@ -653,6 +667,8 @@ def finish_schedule(config, output, assets, directory):
     repeatable=list(dict.fromkeys([assets.resolve(a['name']) for a in config.get('ads',{}).get('items',[])
         if a['priority_class']=='PRIORITY' and a['name'] not in profiled_names]+optional))
     repeatable=[p for p in repeatable if p]
+    intro_candidate=resolve('AD_SMTV INTRO',required=False)
+    if intro_candidate:repeatable=list(dict.fromkeys(repeatable+[intro_candidate]))
     mt_original=[dict(r) for r in flat]
     flat,solution,mt_changes=optimize_near_mt(flat,repeatable,assets,mt_target,optimize,assign_mt_ads)
     mt_shift=int(config.get('schedule_settings',{}).get('mt_show_shift',0))
@@ -675,8 +691,9 @@ def finish_schedule(config, output, assets, directory):
         for i in swaps:
             alt=flat[i]['alternative']; flat[i].update({k:alt[k] for k in ('path','name','duration')});flat[i]['selected_max']=True
         extras=assign_mt_ads(flat[:end+1],ads,assets);combined=[]
-        timing['ads_added']=[dict(cycle=flat[i]['cycle'],block=flat[i]['block'],name=p.name,duration=assets.duration(p)) for i,p in extras.items()]
+        timing['ads_added']=[dict(cycle=flat[i if i>=0 else -i-1]['cycle'],block=flat[i if i>=0 else -i-1]['block'],name=p.name,duration=assets.duration(p)) for i,p in extras.items()]
         for i,r in enumerate(flat):
+            if -i-1 in extras:combined.append(make(extras[-i-1],r['cycle'],r['block'],'intro'))
             combined.append(r)
             if i in extras: combined.append(make(extras[i],r['cycle'],r['block'],'optional'))
             if i==end and med:
@@ -686,6 +703,7 @@ def finish_schedule(config, output, assets, directory):
         flat=combined
         timing.update(gap_seconds=gap,exact=abs(gap)<=0.001,boundary=solution[0])
     day_target=86400-float(config.get('schedule_settings',{}).get('offset_seconds',0))
+    for r in flat:r.pop('_intro_disabled',None)
     full_day_rows=[dict(r) for r in flat]
     from reserve_ads import read_catalog,audit_catalog,write_audit
     from episode_scanner import WORKBOOK_PATH
@@ -751,7 +769,14 @@ def finish_schedule(config, output, assets, directory):
     expected_counts=Counter((r['name'],r['cycle']) for r in expected_priority)
     expected_counts.subtract((r['name'],r['cycle']) for r in day_end['removed_priority'])
     expected_counts=+expected_counts
-    actual_counts=Counter((r['priority_name'],r['cycle']) for r in flat if r.get('priority_name'))
+    actual_counts=Counter((r['priority_name'],r['cycle']) for r in flat if r.get('priority_name') and not r.get('mandatory_event'))
+    retained_cycles={r['cycle'] for r in flat if r.get('kind')=='program'}
+    for event in event_expected:
+        if event['cycle'] not in retained_cycles:continue
+        count=sum(bool(r.get('mandatory_event')) and r['cycle']==event['cycle'] and r['name']==event['name'] for r in flat)
+        waived=any(r.get('mandatory_event') and r['cycle']==event['cycle'] and r['name']==event['name'] for r in day_end.get('removed_inserts',[]))
+        if count!=1 and not (count==0 and waived):missing.append(f"Mandatory event ADS must play once in cycle {event['cycle']}: {event['name']} (actual: {count})")
+    output['mandatory_event_ads']=event_expected
     if expected_counts!=actual_counts: missing.append('Số lần ADS ưu tiên chưa khớp lịch đã cấu hình')
     priority_counts=[dict(name=item['name'],cycles=[sum(r.get('priority_name')==item['name'] and r['cycle']==c for r in flat) for c in range(1,7)]) for item in profile_items]
     from qc_report import combine_temporary_notices

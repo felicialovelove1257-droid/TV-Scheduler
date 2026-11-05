@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "build": "2026.10.31-141543",
+  "build": "2026.11.05-130918",
   "files": [
     {
       "path": "INPUT.xlsx",
-      "size": 2079244,
-      "sha256": "0d64be92ce9a9b822bdf12502f4853307e1d94f2d30598ee895dc63bd6f942e4"
+      "size": 1952021,
+      "sha256": "a827507e4ac76c2634353b071f419137618ad56d32e5cad90cc2fb7c385e4787"
     },
     {
       "path": "SCHEDULER.cmd",
@@ -34,13 +34,18 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/day_end_fit.py",
-      "size": 13103,
-      "sha256": "cb2aba6cf0308d1d5e5878ffbd16e54da592f0a177d2e66d8aadecc5a024eb2c"
+      "size": 14733,
+      "sha256": "755c2a4b1e42372aab830a433f377832ab1c20991b60e2c423355d00b9c0c081"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/day_end_last_resort.py",
       "size": 5946,
       "sha256": "a3c803dd73892b047b51394424ced4cad112e9af415deb54a99569d3feca4aa3"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/docx_schedule.py",
+      "size": 3788,
+      "sha256": "61e9f82c1c7e73b7d14a6f64a29d3886c065d6e4e3754e0a77aa880acde1f0b4"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/draft_input.py",
@@ -54,8 +59,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/english_ui.py",
-      "size": 3231,
-      "sha256": "b0adcbe698fc44fe3660386f8ef19b50b1ee46b834697658ae58d7914a72a9fb"
+      "size": 3493,
+      "sha256": "bc2249c91b043130afcdb2459fa979cc4a7e184afc1f563702a2ffa1a589d80b"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/episode_date.py",
@@ -64,8 +69,23 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/episode_scanner.py",
-      "size": 83164,
-      "sha256": "36c3749b1d9165cd92f6f85367b1564317c859d331b02b4b5d31d0b0afcf25b5"
+      "size": 86448,
+      "sha256": "7490721a2f6f0a0ac9c75c2208b65752d30129774fd25159e96adca066249622"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/event_ads.py",
+      "size": 3021,
+      "sha256": "2576707d5631b4d70355fa010a3c5fa41b495fbad8cf1598b6c8f46eabd8db19"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/external_qc.py",
+      "size": 69050,
+      "sha256": "2bf655b1d81777735fa69a9b22990c2cd867c48863351d012dce84b2eb4422f6"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/fn_rules.py",
+      "size": 3128,
+      "sha256": "d910f983b41a9820d00921aa68898e84a38b5007f654f089cb80df06937c4764"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/import_sources.py",
@@ -84,13 +104,13 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/missing_media.py",
-      "size": 18676,
-      "sha256": "287e46e5e4d9f4959d357aaf73fc8dbc7a1f80b3a57db8ab7438a8e927e39115"
+      "size": 17827,
+      "sha256": "61b55ec5fe24ca4742f759137d1951a0fa34140acad986ed6319779332506dbe"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/mt_local.py",
-      "size": 8636,
-      "sha256": "ace17bfba97511658427989a9026851ca2813895e9a417b2c8cd5deb15d74431"
+      "size": 8830,
+      "sha256": "cc36fd0c54190b15b31183248b885f0ba8061c54d04d61b8a6939a5749b60d84"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/mt_shift.py",
@@ -109,8 +129,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/pipeline_flow.py",
-      "size": 24326,
-      "sha256": "8ef5b46f445c79748b886cc057d46d4c0a25076c55e37ca1afab586aefc6133d"
+      "size": 39198,
+      "sha256": "d4fa57ab1900bb7ce6647df83a2d1488b57360385eeed686dd321df9c3b7519e"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/portable_paths.py",
@@ -129,8 +149,13 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/qc_report.py",
-      "size": 19401,
-      "sha256": "d0a8f926c5c170b1a2ad62b20f0634c5b1c2d5000ffa81472802f0cc32c9f99a"
+      "size": 19550,
+      "sha256": "47f2e5a133e8c8fb62129d915375d862e0a5f002b555da3ee74bc4cb2565c3b6"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/qc_translations_en.py",
+      "size": 19856,
+      "sha256": "f0c761b1663437eb03bcae6a827bda65ce56d783f2156d6339d0aa61f6855304"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/reserve_ads.py",
@@ -144,18 +169,23 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/schedule_engine.py",
-      "size": 15184,
-      "sha256": "a176828c980fd26356906dff2a6ec0cc2ac387fc983b265baf73af0332df1168"
+      "size": 15319,
+      "sha256": "4bcd815d19c51a99e3257937bfc9aaa782544b92a69f6781ce608b797d4c64fb"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/schedule_timing.py",
-      "size": 47664,
-      "sha256": "79def2b994769adca7704446dd6aa2862d77979a93c41c30957276ab7ea50078"
+      "size": 49383,
+      "sha256": "373b1a19559eba7f4fb949525e25a237b267b369a8e4667bcac5abd48b319155"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/show_formats.py",
       "size": 1987,
       "sha256": "9e848ac3e5ecef9935375abfcdf238db776281347aad9846c8b8d53bf0d5b3d7"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/smtv_intro.py",
+      "size": 678,
+      "sha256": "960b56b3a18a110109bb686e9dfa09f2f37a3b8d420a23173d43b328a0af3990"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/start_notice.py",
@@ -173,14 +203,19 @@
       "sha256": "9ba7a4170541c10dd2158fc1b54bc07e6550e66ee18d13f945015661ab80df34"
     },
     {
+      "path": "schedule/pipeline/_NOI_BO/ui_language.py",
+      "size": 1780,
+      "sha256": "2bbc07c7f2f47194e77df344c6668cf896753acc7a5ede793b4529bfa6e9c448"
+    },
+    {
       "path": "schedule/pipeline/_NOI_BO/wow_rules.py",
       "size": 520,
       "sha256": "64138907fd94c63cb9cc71366f60efa37f7995bd0bc3edf9f62be7e4aa16d71b"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/english_translations.json",
-      "size": 62554,
-      "sha256": "e9b1220afbc6da1cd8daffe1bb7f5b52b42ac91b7e3707a9db80c4d0310059e1"
+      "size": 66092,
+      "sha256": "607610cb6d3f93207f569f7152e91f09fc3ff0fb0e201e43c352d61d8bb78c48"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/runtime_env.cmd",

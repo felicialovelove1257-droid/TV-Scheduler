@@ -26,13 +26,8 @@ def natural_key(path: Path) -> list:
 
 
 def fn_order_key(path: Path):
-    name=path.stem.upper()
-    ep=re.match(r'(\d+)',name)
-    reair=bool(re.search(r'RE[ _-]*AIR',name))
-    part=re.search(r'\bP(?:ART\s*)?(\d+)([AB]?)(?=[ _.(]|$)',name)
-    group=re.sub(r'\bP(?:ART\s*)?\d+[AB]?(?=[ _.(]|$)', '', name)
-    return (-(int(ep[1]) if ep else 0), reair, group,
-            int(part[1]) if part else 0, part[2] if part else '', name)
+    from fn_rules import order_key
+    return order_key(path)
 
 
 def find_one(files: list[Path], *parts: str, exclude: tuple[str, ...] = ()) -> Path | None:
@@ -238,7 +233,11 @@ def build_schedule(config_path: Path) -> dict:
                 no_max = [p for p in selected if "NO MAX" in p.name.upper()]
                 if no_max:
                     selected = no_max + [p for p in selected if " S2" in p.name.upper()]
-                if not selected and (block != 6 or active_show): all_missing.add(f'Block {block}: Show {slot}')
+                if not selected and (block != 6 or active_show):
+                    if active_show:
+                        all_missing.add(f'Block {block}: Show {slot} — không tìm thấy file EP {config["episode"]} có mã {code}')
+                    else:
+                        all_missing.add(f'Block {block}: Show {slot} — INPUT chưa gán chương trình cho vị trí này')
             elif block == 6:
                 # S3 is optional. INPUT_1 A:H may leave it empty for the episode;
                 # keep the block in the rotation without inventing content.
@@ -268,6 +267,8 @@ def build_schedule(config_path: Path) -> dict:
 def show_code(text):
     normalized=re.sub(r'[^a-z0-9]+','',text.casefold())
     if 'veganism' in normalized and 'cookingshow' in normalized:return 'VEGC'
+    if normalized in {'hl','healthy','healthyliv','healthyliving'}:return 'HL'
+    if normalized in {'iv','inner','innervision','innervisioniv'}:return 'IV'
     aliases = {"nature's beauty": 'NB', 'veganism: the noble way of living': 'VEG',
                'animal world': 'AW', 'a journey through aesthetic realms': 'AJAR'}
     return aliases.get(text.casefold(), text.split()[0] if text else '')

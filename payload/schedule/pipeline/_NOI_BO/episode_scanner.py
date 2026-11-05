@@ -93,11 +93,16 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
     stem = normalize_episode_order(stem, program)
     stem = re.sub(r'\bNWN\s+(?:SEG(?:MENT)?|S)\s*([123])\s*([ABC]?)(?=\s|[.(]|$)',
                   lambda m:'NWN SEG '+m[1]+m[2].upper(), stem, flags=re.I)
+    from event_ads import identify
+    event=identify(stem,episode)
+    if event:
+        title,part=event
+        return f'{episode} {title} AD {part}{Path(source_name).suffix.lower()}', 'event-ad'
     upper = stem.upper()
     upper = re.sub(r'NO[ _]*(?:SMTV[ _]*)?MAX', 'NO MAX', upper)
     ext = Path(source_name).suffix.lower()
 
-    if upper == f"{episode} DN TEMP" or re.fullmatch(rf"{episode}\s+NWN DAILY SCROLL(?:\s+V\d+)?", upper):
+    if re.fullmatch(rf"{episode}\s+DN TEMP(?:\s+V\d+)?", upper) or re.fullmatch(rf"{episode}\s+NWN DAILY SCROLL(?:\s+V\d+)?", upper):
         return f"{episode} NWN Daily Scroll{ext}", "daily-scroll"
     if "NWN SEG 1A" in upper:
         suffix = " (No Max)" if "NO MAX" in upper else ""
@@ -226,7 +231,7 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         fn_source_episode = episode - 1 if fallback else None
     # A real Daily Scroll supersedes DN TEMP; they are not two schedule slots.
     if any(re.search(r"NWN DAILY SCROLL", normalize_episode_order(p.name, program), re.I) for p in sources):
-        sources = [p for p in sources if p.stem.upper() != f"{episode} DN TEMP"]
+        sources = [p for p in sources if not re.fullmatch(rf"{episode}\s+DN TEMP(?:\s+V\d+)?", p.stem, re.I)]
     for source in sources:
         if program.get('wow_has_intro_outro') is False and re.search(r'\bWOW\s+(?:INTRO|OUTRO)\b',source.name,re.I):continue
         source_episode = episode - 1 if has_fn(source) and source.parent != source_dir else episode
@@ -311,6 +316,7 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
             prefix=re.match(r'(\d{4})\b',normalize_episode_order(source.name, program))
             if prefix:local_ep=int(prefix[1])
         target_name,rule=proposed_name(source.name,local_ep,program)
+        if rule=='event-ad':continue  # Event campaigns must be present in the EP source folder.
         if source_fn_teaser and is_fn_teaser(target_name):continue
         candidate=dict(rule=rule,source_name=source.name,target_name=target_name,source_path=str(source),target_path=str(local_dir/target_name),local_fallback=True)
         if not eligible_teaser(target_name,episode):continue
@@ -579,6 +585,13 @@ def extract_ads(rows: list[list[str]], episode: int) -> dict:
 
 def scan_episode(episode: int) -> dict:
     inputs = load_inputs()
+    config_dir = BASE_DIR / "configs"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / f"EP_{episode}_scan.json"
+    try:
+        previous = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    except (OSError, ValueError):
+        previous = {}
     source_dir = EXPORT_ROOT / f"EP {episode}"
     local_dir = LOCAL_ROOT / f"EP {episode}"
     root_files = sorted(source_dir.glob("*.mp4")) if source_dir.exists() else []
@@ -608,15 +621,17 @@ def scan_episode(episode: int) -> dict:
         from draft_input import item_key
         result['rename_preview']['items']=[i for i in result['rename_preview']['items'] if item_key(i)!='TSER WOW']
     teaser_options=BASE_DIR/'configs'/f'EP_{episode}_teaser_options.json'
-    tser_fn=checkbox_preferences().get('tser_fn',json.loads(teaser_options.read_text(encoding='utf-8')).get('tser_fn',True) if teaser_options.exists() else True)
-    result.setdefault('schedule_settings',{})['tser_fn']=tser_fn
+    saved_teaser=json.loads(teaser_options.read_text(encoding='utf-8')) if teaser_options.exists() else {}
+    previous_settings=previous.get('schedule_settings',{}) if isinstance(previous.get('schedule_settings'),dict) else {}
+    tser_fn=saved_teaser.get('tser_fn',previous_settings.get('tser_fn',checkbox_preferences().get('tser_fn',True)))
+    result['schedule_settings']=dict(previous_settings)
+    result['schedule_settings']['tser_fn']=tser_fn
+    for key in ('start_notice','air_start_notice'):
+        if previous.get(key):result[key]=previous[key]
     if not tser_fn:
         from draft_input import item_key
         result['rename_preview']['items']=[i for i in result['rename_preview']['items'] if item_key(i)!='TSER FN']
     apply_choices(result)
-    config_dir = BASE_DIR / "configs"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / f"EP_{episode}_scan.json"
     result["config_path"] = str(config_path)
     from draft_input import merge_reported,storage
     reported_path=storage(result)
@@ -682,6 +697,8 @@ def run_gui() -> None:
     from pipeline_flow import show_flow
     flow_footer=ttk.Frame(sidebar,padding=(0,10,0,0))
     flow_footer.pack(side='bottom',fill='x')
+    from ui_language import add_selector
+    add_selector(flow_footer)
     ttk.Separator(flow_footer).pack(fill='x',pady=(0,8))
     ttk.Button(flow_footer,text='Thứ tự xử lý PIP',command=lambda: show_flow(root)).pack(fill='x')
     ttk.Label(flow_footer,text='Xem các ưu tiên đang áp dụng',wraplength=170,foreground='#666666').pack(anchor='w',pady=(5,0))
@@ -773,16 +790,31 @@ def run_gui() -> None:
     bulk_buttons=ttk.Frame(bulk_page,padding=(0,8));bulk_buttons.pack(fill='x')
     bulk_ep=[episode_var.get().strip()]
     def persist_bulk():
-        if bulk_ep[0].isdigit():
-            path=BASE_DIR/'configs'/f'EP_{bulk_ep[0]}_bulk_input.txt'
+        text=bulk_text.get('1.0','end').strip()
+        target_ep=bulk_ep[0]
+        notice_ep=re.search(r'\bNEXT\s+DAY\s+WILL\s+AIR\s+(\d{4})\b',text,re.I)
+        if notice_ep:target_ep=notice_ep.group(1)
+        if re.fullmatch(r'\d{4}',target_ep or ''):
+            path=BASE_DIR/'configs'/f'EP_{target_ep}_bulk_input.txt'
             path.parent.mkdir(parents=True,exist_ok=True)
-            path.write_text(bulk_text.get('1.0','end').strip(),encoding='utf-8')
+            # Merely visiting an EP with a blank editor must not erase its saved input.
+            if text or not path.exists():path.write_text(text,encoding='utf-8')
     def load_bulk(*_args):
         persist_bulk()
         bulk_ep[0]=episode_var.get().strip()
         bulk_text.delete('1.0','end')
+        if not re.fullmatch(r'\d{4}',bulk_ep[0] or ''):return
         path=BASE_DIR/'configs'/f'EP_{bulk_ep[0]}_bulk_input.txt'
-        if path.exists():bulk_text.insert('1.0',path.read_text(encoding='utf-8'))
+        text=path.read_text(encoding='utf-8') if path.exists() else ''
+        if not text.strip():
+            scan_path=BASE_DIR/'configs'/f'EP_{bulk_ep[0]}_scan.json'
+            try:saved=json.loads(scan_path.read_text(encoding='utf-8')) if scan_path.exists() else {}
+            except (OSError,ValueError):saved={}
+            text=str(saved.get('start_notice') or '').strip()
+            if text:path.write_text(text,encoding='utf-8')
+        if text:bulk_text.insert('1.0',text)
+        notice=re.search(r'^\s*(Next\s+day\s+will\s+air.*)$',text,re.I|re.M)
+        notice_var.set(notice.group(1).strip() if notice else '')
     initial_bulk=BASE_DIR/'configs'/f'EP_{bulk_ep[0]}_bulk_input.txt'
     if initial_bulk.exists():bulk_text.insert('1.0',initial_bulk.read_text(encoding='utf-8'))
     episode_var.trace_add('write',load_bulk)
@@ -1015,11 +1047,20 @@ def run_gui() -> None:
             preview_var.set(result["rename_preview"]["path"])
             current_result.clear()
             current_result.update(result)
-            fn_var.set(checkbox_preferences().get("fn",result["program"]["schedule_type"] == "FN"))
+            saved_settings=result.get('schedule_settings',{})
+            fn_var.set(saved_settings.get('fn',checkbox_preferences().get("fn",result["program"]["schedule_type"] == "FN")))
+            tser_fn_var.set(saved_settings.get('tser_fn',tser_fn_var.get()))
+            mt_shift_var.set(str(max(-5,min(5,int(saved_settings.get('mt_show_shift',mt_shift_var.get() or 0))))))
+            offset_var.set(str(saved_settings.get('offset_seconds',0)))
             refresh_active_blocks()
+            start_block=saved_settings.get('start_block')
+            start_block_var.set(str(start_block) if start_block else '')
+            if result.get('start_notice'):notice_var.set(result['start_notice'])
             current_result["schedule_settings"] = {
                 "fn": fn_var.get(),
                 "tser_fn": tser_fn_var.get(),
+                "offset_seconds": float(offset_var.get() or 0),
+                "mt_show_shift": int(mt_shift_var.get()),
                 "start_block": int(start_block_var.get()) if start_block_var.get() else None,
                 "active_blocks": [int(value) for value in start_block_combo["values"]],
             }
@@ -1411,6 +1452,16 @@ def run_gui() -> None:
         from pip_update_ui import show_update
         show_update(root)
     ttk.Button(run_header,text='Update PIP',command=update_pip).pack(side='left',padx=(16,0))
+    def check_external_schedule():
+        from external_qc import show_dialog
+        def external_notice(ep):
+            if str(ep)==episode_var.get():return bulk_text.get('1.0','end')
+            path=BASE_DIR/'configs'/f'EP_{ep}_bulk_input.txt'
+            return path.read_text('utf-8-sig') if str(ep).isdigit() and path.is_file() else ''
+        show_dialog(root,episode_var.get(),external_notice)
+    tk.Button(run_header,text='Check external schedule',command=check_external_schedule,
+              bg='#FFD54F',fg='#202020',activebackground='#FFC107',activeforeground='#202020',
+              font=('Segoe UI',10,'bold'),relief='flat',padx=12,pady=8,cursor='hand2').pack(side='left',padx=(8,0))
     run_button = tk.Button(run_buttons, text='▶  CHẠY TẤT CẢ', command=run_all,
                            font=('Segoe UI', 11, 'bold'), bg='#176B46', fg='white',
                            activebackground='#125438', activeforeground='white',

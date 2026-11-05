@@ -40,22 +40,8 @@ def fn_set(selected):
     """Use event identity, not the entire folder, to avoid mixing FN sets."""
     selected=Path(selected)
     def identity(path):
-        from episode_scanner import normalize_episode_order
-        name=normalize_episode_order(path.stem).upper().replace('_',' ')
-        if not re.search(r'NWN[ _]+(?:SEG(?:MENT)?|S)[ _]*1[ _]*B\b',name):return None
-        ep=re.match(r'(\d{4})\b',name)
-        part=re.search(r'\bP(?:ART)?[ _]*(\d+)([A-Z]?)\b',name)
-        # Underscores are word characters; normalize separators first.
-        clean=re.sub(r'[_]+',' ',name)
-        part=re.search(r'\bP(?:ART)?\s*(\d+)([A-Z]?)\b',clean)
-        if not ep or not part:return None
-        date=re.search(r'(?<!\d)\d{8}(?!\d)',clean)
-        fn=re.search(r'\bFN\s*(\d+)\b',clean)
-        event=(ep[1],date[0] if date else '',fn[1] if fn else '',bool(re.search(r'\bREAIR\b',clean)))
-        if not date and not fn:
-            title=re.sub(r'\bP(?:ART)?\s*\d+[A-Z]?\b|\bV\d+\b',' ',clean)
-            event+=(' '.join(title.split()),)
-        return event,(int(part[1]),part[2])
+        from fn_rules import identity as shared_identity
+        return shared_identity(path.name)
     if selected.is_dir():
         starts=[p for p in selected.glob('*.mp4') if identity(p) and identity(p)[1] in ((1,'A'),(1,''))]
         if len(starts)!=1:raise ValueError('Choose the P1A file: this folder contains zero or multiple FN sets.')

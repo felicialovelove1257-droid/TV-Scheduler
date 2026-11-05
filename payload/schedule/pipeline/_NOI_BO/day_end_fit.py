@@ -24,6 +24,9 @@ def removal_levels(rows):
         nxt=next((x for x in rows[i+1:] if x['kind']=='program'),None)
         internal=bool(prev and nxt and (prev['cycle'],prev['block'])==(nxt['cycle'],nxt['block']))
         if r['kind'] in INSERT_KINDS and internal and prev.get('required_insert'):continue
+        if r.get('mandatory_event'):
+            levels[i]=6
+            continue
         if r['kind']=='program' and re.search(r'\bNWN DAILY SCROLL\b',r['name'],re.I):levels[i]=5
         elif r['kind'] in INSERT_KINDS:
             if internal and re.search(r'\bNWN\b',prev['name'],re.I):levels[i]=2
@@ -71,6 +74,16 @@ def one_ad(rows,pool,target,source):
     base=total(trial);best=None
     ordered=sorted(pool,key=lambda r:r['duration']);durations=[r['duration'] for r in ordered]
     used={(r['cycle'],str(r.get('path','')).casefold()) for r in trial if r['kind'] in INSERT_KINDS}
+    from smtv_intro import is_intro,start_slots
+    for i in start_slots(trial):
+        if i<=med:continue
+        for ad in ordered:
+            if not is_intro(ad['path']) or (trial[i]['cycle'],ad['path'].casefold()) in used:continue
+            if source=='tail' and ad['cycle']!=trial[i]['cycle']:continue
+            gap=target-base-ad['duration']
+            if abs(gap)>=abs(target-base) or gap < -TOLERANCE:continue
+            score=(abs(gap)>TOLERANCE,abs(gap),False,-trial[i]['cycle'])
+            if best is None or score<best[0]:best=(score,i,None,ad,True)
     for i,anchor in enumerate(trial):
         if i<=med or anchor['kind']!='program' or not anchor.get('insert_slot'):continue
         j=next((j for j in range(i+1,len(trial)) if trial[j]['kind']!='marker'),None)
@@ -81,23 +94,26 @@ def one_ad(rows,pool,target,source):
         need=target-base+old
         pivot=bisect.bisect_right(durations,need+TOLERANCE)
         for ad in reversed(ordered[:pivot]):
+            if is_intro(ad['path']):continue
             if ad['duration']<=old:continue
             if source=='tail' and ad['cycle']!=anchor['cycle']:continue
             if anchor['insert_slot']=='inside_show' and ad['duration']>=120:continue
             if (anchor['cycle'],ad['path'].casefold()) in used:continue
             new_total=base-old+ad['duration'];gap=target-new_total
             score=(abs(gap)>TOLERANCE,abs(gap),bool(occupied),-anchor['cycle'])
-            if best is None or score<best[0]:best=(score,i,j if occupied else None,ad)
+            if best is None or score<best[0]:best=(score,i,j if occupied else None,ad,False)
             # Durations descend; smaller ones cannot improve a non-overrunning fit.
             if gap>=0:break
     if best is None:return rows,[]
-    _,i,j,ad=best;anchor=trial[i]
+    _,i,j,ad,before=best;anchor=trial[i]
     replacement=dict(ad,cycle=anchor['cycle'],block=anchor['block']);replacement.pop('priority_name',None)
+    if before:replacement['kind']='intro'
     result=[]
     for index,r in enumerate(trial):
         if index==j:continue
+        if index==i and before:result.append(replacement)
         result.append(r)
-        if index==i:result.append(replacement)
+        if index==i and not before:result.append(replacement)
     if insertion_conflicts(result):return rows,[]
     event=dict(cycle=anchor['cycle'],block=anchor['block'],name=ad['name'],duration=ad['duration'],source='discarded_cycle_tail' if source=='tail' else 'INPUT_4',sheet_name=ad.get('sheet_name',ad['name']))
     if j is not None:event['replaces']=trial[j]['name']
@@ -109,7 +125,7 @@ def search_variants(rows,limit,target,pool,tail,allow_fill=True):
     levels=removal_levels(rows);choices=max_options(rows);base=total(rows)
     def cost(value):
         removed,swaps=value
-        return tuple(sum(levels[i]==level for i in removed) for level in (5,4,3,2,1))+(len(swaps),)
+        return tuple(sum(levels[i]==level for i in removed) for level in (6,5,4,3,2,1))+(len(swaps),)
     states={(0,0):((),())};limited=False
     actions=[(i,-rows[i]['duration'],'remove') for i in levels if levels[i]<=limit]
     actions += [(i,rows[i]['alternative']['duration']-rows[i]['duration'],'max') for i in choices]
@@ -155,6 +171,13 @@ def fit_day_end(full,files,assets,target,entries,draft=False):
     cut=max(i for i,r in enumerate(full) if (r['cycle'],r['block'])==group)+1
     tail=[dict(r) for r in full[cut:] if r['cycle']==last['cycle'] and r['kind'] in INSERT_KINDS and r['duration']>=120 and not re.match(r'^M intro',r['name'],re.I) and allowed_name(r['path'])]
     pool=catalog_pool(entries,assets)
+    intro=assets.resolve('AD_SMTV INTRO')
+    from reserve_ads import resolve_entry
+    blocked={str(resolve_entry(e,assets)[0]).casefold() for e in entries if e.get('excluded')}
+    if intro and str(intro).casefold() in blocked:intro=None
+    if intro and allowed_name(intro) and not any(r['path'].casefold()==str(intro).casefold() for r in pool):
+        seconds=assets.duration(intro)
+        if seconds>0:pool.append(dict(name=intro.name,path=str(intro),duration=seconds,kind='intro',sheet_name='AD_SMTV INTRO'))
     attempts=[];limited=False
     # First fill the existing final show, preferring Max, then discarded ADS, then catalog.
     topped,max_edits=top_up_day_max(baseline,target)
@@ -180,7 +203,7 @@ def fit_day_end(full,files,assets,target,entries,draft=False):
             origin,report=finish_day(prefix,files,assets,total(prefix)+86400,extra_errors,draft=draft)
             # Search early tiers first; mixed Max/removal/replacement is allowed within each tier.
             over=None;short=None
-            for tier in range(6):
+            for tier in range(7):
                 attempt,excess,cap=search_variants(origin,tier,target,pool,[]);limited|=cap
                 attempts.append(dict(tier=tier,gap_seconds=target-total(attempt[1]) if attempt else None))
                 if attempt and abs(target-total(attempt[1]))<=TOLERANCE:selected=attempt;extended=True;break
@@ -193,7 +216,7 @@ def fit_day_end(full,files,assets,target,entries,draft=False):
     removed_rows=[origin[i] for i in removed]
     changes=direct_max+[dict(cycle=origin[i]['cycle'],block=origin[i]['block'],before=origin[i]['name'],after=origin[i]['alternative']['name'],added_seconds=origin[i]['alternative']['duration']-origin[i]['duration']) for i in swaps]
     report.update(policy='preferred_edits_then_combined_search',target_seconds=target,max_changes=changes,
-        removed_inserts=[dict(cycle=r['cycle'],name=r['name'],kind=r['kind'],duration=r['duration']) for r in removed_rows if r['kind']!='program'],
+        removed_inserts=[dict(cycle=r['cycle'],name=r['name'],kind=r['kind'],duration=r['duration'],mandatory_event=bool(r.get('mandatory_event'))) for r in removed_rows if r['kind']!='program'],
         removed_daily_scroll=[dict(cycle=r['cycle'],name=r['name'],duration=r['duration']) for r in removed_rows if r['kind']=='program'],
         actual_seconds=total(rows),gap_seconds=target-total(rows),overrun_seconds=total(rows)-target,in_preferred_window=abs(target-total(rows))<=TOLERANCE,
         search_attempts=attempts,search_limited=limited,removed_rows=len(full)-len(rows))
