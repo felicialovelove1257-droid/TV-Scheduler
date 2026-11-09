@@ -14,16 +14,20 @@ def identity(row):return row.get('cycle'),row.get('block'),row.get('path',row['n
 
 def removal_levels(rows):
     """Never remove a required segmented-show insert; at most one DN elsewhere."""
-    from schedule_timing import INSERT_KINDS,mark_insert_slots
+    from schedule_timing import INSERT_KINDS,mark_insert_slots,removable_fn_copies
     rows=mark_insert_slots([dict(r) for r in rows])
     med=next((i for i,r in enumerate(rows) if r['kind']=='meditation'),len(rows))
     levels={}
+    fn_removable=removable_fn_copies(rows)
     for i,r in enumerate(rows):
         if i<=med:continue
         prev=next((x for x in reversed(rows[:i]) if x['kind']=='program'),None)
         nxt=next((x for x in rows[i+1:] if x['kind']=='program'),None)
         internal=bool(prev and nxt and (prev['cycle'],prev['block'])==(nxt['cycle'],nxt['block']))
         if r['kind'] in INSERT_KINDS and internal and prev.get('required_insert'):continue
+        if r.get('kind')=='teaser' and re.search(r'\bFN\d*\b',r['name'],re.I):
+            if i in fn_removable:levels[i]=2
+            continue
         if r.get('mandatory_event'):
             levels[i]=6
             continue

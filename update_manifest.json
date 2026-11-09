@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "build": "2026.11.05-130918",
+  "build": "2026.11.09-180152",
   "files": [
     {
       "path": "INPUT.xlsx",
-      "size": 1952021,
-      "sha256": "a827507e4ac76c2634353b071f419137618ad56d32e5cad90cc2fb7c385e4787"
+      "size": 2090233,
+      "sha256": "8d29be6a27bdb1485e4b58c30838be48f17c8ee35756b7401bf0b821743afcc8"
     },
     {
       "path": "SCHEDULER.cmd",
@@ -19,8 +19,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/ap_rules.py",
-      "size": 2771,
-      "sha256": "55a5bc9c51c093679f423aefc3f14d6ee5b70446b04a6d9e219851288e511fa9"
+      "size": 4145,
+      "sha256": "4c889a0887e40edabb89480e9d1e10fb334fd9937eb91f917b034b28b869d061"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/app_version.py",
@@ -34,8 +34,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/day_end_fit.py",
-      "size": 14733,
-      "sha256": "755c2a4b1e42372aab830a433f377832ab1c20991b60e2c423355d00b9c0c081"
+      "size": 14945,
+      "sha256": "f5a1cb931ac85dbf6752fe02debd51a23b60b482b58e3a277e1e4319456cf4b1"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/day_end_last_resort.py",
@@ -69,8 +69,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/episode_scanner.py",
-      "size": 86448,
-      "sha256": "7490721a2f6f0a0ac9c75c2208b65752d30129774fd25159e96adca066249622"
+      "size": 88402,
+      "sha256": "0baa465f61f075ff12e1223b464c13473dc6c671d10b70e756b8c8896f9d2a83"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/event_ads.py",
@@ -94,8 +94,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/max_options.py",
-      "size": 2647,
-      "sha256": "ee4bc07e244b48018296dc5abcc98c50e3a9c245c70b12a1ea57796495c29c45"
+      "size": 2982,
+      "sha256": "bab64749650b49dd332fe925bdf10992710f73f30ea95d4883cc83380c57936e"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/media_labels.py",
@@ -104,13 +104,13 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/missing_media.py",
-      "size": 17827,
-      "sha256": "61b55ec5fe24ca4742f759137d1951a0fa34140acad986ed6319779332506dbe"
+      "size": 22790,
+      "sha256": "cbe20cca339945f2b7a294d840f48db002148599854b233afa0336afd6cedea4"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/mt_local.py",
-      "size": 8830,
-      "sha256": "cc36fd0c54190b15b31183248b885f0ba8061c54d04d61b8a6939a5749b60d84"
+      "size": 9043,
+      "sha256": "5080098c994900ab4c733fd12fe8fc98d33219b8d6f1dbe2b0127f68c2eff9c5"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/mt_shift.py",
@@ -129,8 +129,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/pipeline_flow.py",
-      "size": 39198,
-      "sha256": "d4fa57ab1900bb7ce6647df83a2d1488b57360385eeed686dd321df9c3b7519e"
+      "size": 41254,
+      "sha256": "512cd9405e2f113bbe7690de64b19c83b90b053cef14d309728bdc09d4b01cd4"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/portable_paths.py",
@@ -164,18 +164,23 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/schedule_assets.py",
-      "size": 6272,
-      "sha256": "faf3efc805aa056cc28ce4d0532e5c47ef4979a4a2d002a24229fa7f5de83eac"
+      "size": 6333,
+      "sha256": "d4b0bdd26c3d7c545f28e78a0c9f62425b8a8812e0980310c71342e091d10d64"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/schedule_engine.py",
-      "size": 15319,
-      "sha256": "4bcd815d19c51a99e3257937bfc9aaa782544b92a69f6781ce608b797d4c64fb"
+      "size": 16067,
+      "sha256": "022a082c089f0f36586500e73454c53677231f4552d1735673aba2c631df0cc2"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/schedule_table_colors.py",
+      "size": 3289,
+      "sha256": "e697fc29509b382b278feacb13489735552826e7ae4c15a2e04ed572774e7be3"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/schedule_timing.py",
-      "size": 49383,
-      "sha256": "373b1a19559eba7f4fb949525e25a237b267b369a8e4667bcac5abd48b319155"
+      "size": 50952,
+      "sha256": "096cfbea645512b253027da5b28eea277e395d0b032bdc35c6322b75a1a8586e"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/show_formats.py",
@@ -199,8 +204,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/teaser_spacing.py",
-      "size": 2262,
-      "sha256": "9ba7a4170541c10dd2158fc1b54bc07e6550e66ee18d13f945015661ab80df34"
+      "size": 2332,
+      "sha256": "98c7f6c542aa4104a3737e00edb90b66e69d4d55d98e9bbff0cc618739f5aa2b"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/ui_language.py",
@@ -214,8 +219,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/english_translations.json",
-      "size": 66092,
-      "sha256": "607610cb6d3f93207f569f7152e91f09fc3ff0fb0e201e43c352d61d8bb78c48"
+      "size": 70752,
+      "sha256": "5940b293a04f9e996a6183fab7082783ca0fcb695e93db8c87b924c5e40e1570"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/runtime_env.cmd",

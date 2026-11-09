@@ -16,7 +16,7 @@ def slot_family(episode,program,files=()):
     return 'AP' if (int(episode)-AP_SUNDAY_EP)%7==0 else 'WOW'
 
 def part_id(name):
-    m=re.search(r'\b(?:PART|PT|P)\s*([A-Z])\b',name,re.I)
+    m=re.search(r'\b(?:PART|PT|P)\s*([A-Z])(?=[ _.(]|$)',name,re.I)
     return m[1].upper() if m else None
 
 def teaser_phase(name):
@@ -32,11 +32,44 @@ def valid_teaser(name,episode):
     phase=teaser_phase(name)
     return bool(ep and int(ep[1])==campaign['episode'] and (phase is None or phase==campaign['days_before']))
 
-def select_parts(files,episode,expected_parts=()):
-    groups={};missing=[]
+def part_variant(name):
+    return part_id(name),bool(re.search(r'no[ _]*(?:smtv[ _]*)?max',name,re.I))
+
+
+def revision_rank(name,path):
+    versions=re.findall(r'(?:^|[ _])v(\d+)(?=[ _.(]|$)',Path(name).stem,re.I)
+    try:mtime=Path(path).stat().st_mtime_ns
+    except OSError:mtime=0
+    return max(map(int,versions),default=0),mtime,str(name).casefold()
+
+
+def latest_part_rows(rows):
+    """One source revision for each AP part and Max/No Max variant."""
+    winners={}
+    for row in rows:
+        if row.get('rule')!='ap-part':continue
+        key=part_variant(row['target_name'])
+        rank=(not row.get('local_fallback',False),*revision_rank(row['source_name'],row['source_path']))
+        if key not in winners or rank>winners[key][0]:winners[key]=(rank,row)
+    return [r for r in rows if r.get('rule')!='ap-part' or winners[part_variant(r['target_name'])][1] is r]
+
+
+def latest_part_files(files,episode,preferred=()):
+    preferred={n.casefold() for n in preferred}
+    winners={}
     for p in files:
         if not re.match(rf'^{episode}\s+AP\b',p.name,re.I):continue
         if re.search(r'NO[ _]*(?:UP[ _]*)?(?:NEXT|NXT)',p.name,re.I):continue
+        key=part_variant(p.name)
+        if not key[0]:continue
+        rank=(p.name.casefold() in preferred,*revision_rank(p.name,p))
+        if key not in winners or rank>winners[key][0]:winners[key]=(rank,p)
+    return {k:v[1] for k,v in winners.items()}
+
+
+def select_parts(files,episode,expected_parts=(),preferred=()):
+    groups={};missing=[]
+    for p in latest_part_files(files,episode,preferred).values():
         part=part_id(p.name)
         if part:groups.setdefault(part,[]).append(p)
     selected=[]

@@ -66,8 +66,8 @@ class Assets:
         for name,path in self.ad_profile.get('aliases',{}).items():
             self.mapping.setdefault(key(name),{local_path(path)})
 
-        from missing_media import skipped_ads
-        names=skipped_ads(config['episode'])
+        from missing_media import skipped_ads,one_time_skipped_ads
+        names=skipped_ads(config['episode'])+one_time_skipped_ads(config['episode'])
         self.skipped_names={filename_key(n) for n in names}
         for name in names:
             path=self._resolve_unfiltered(name)

@@ -29,6 +29,7 @@ def spread_teasers(rows, close_seconds=3600):
             if before[0]>=close_seconds:continue
             best=None
             for i,_ in positions(rows,path):
+                if rows[i].get('preferred_teaser_position'):continue
                 if rows[i]['duration']>=120:continue
                 for j,ad in enumerate(rows):
                     if ad.get('cycle')!=rows[i]['cycle'] or ad.get('kind') not in ('optional','PRIORITY'):continue

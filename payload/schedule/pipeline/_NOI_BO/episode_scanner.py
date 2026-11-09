@@ -265,6 +265,8 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         rows.append(choice)
     from teaser_selection import eligible_teaser
     rows=[r for r in rows if eligible_teaser(r['target_name'],episode)]
+    from ap_rules import latest_part_rows,part_variant
+    rows=latest_part_rows(rows)
     # Windows duplicate copies are redundant when their original is present.
     originals={str(Path(row['source_path']).parent).casefold()+'|'+Path(row['source_name']).stem.casefold()
                for row in rows}
@@ -299,9 +301,11 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         row.pop("status", None)
     from draft_input import item_key
     def scan_key(row):
+        if row.get('rule')=='ap-part':return ('ap-part',part_variant(row['target_name']))
         if row.get('rule') in ('nwn-s1b-fn','bmd-intro','bmd-outro','ap-part','show-intro','show-main','show-outro'):return row['target_name'].casefold()
         return item_key(row)
     occupied={scan_key(row) for row in rows if scan_key(row)}
+    source_ap_keys={scan_key(row) for row in rows if row.get('rule')=='ap-part'}
     draft_targets=set()
     manifest=local_dir/'pipeline_manifest.csv'
     if manifest.exists():
@@ -321,8 +325,9 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         candidate=dict(rule=rule,source_name=source.name,target_name=target_name,source_path=str(source),target_path=str(local_dir/target_name),local_fallback=True)
         if not eligible_teaser(target_name,episode):continue
         key=scan_key(candidate)
-        if key and key not in occupied:
+        if key and (key not in occupied or (rule=='ap-part' and key not in source_ap_keys)):
             rows.append(candidate);occupied.add(key)
+    rows=latest_part_rows(rows)
     preview_dir = BASE_DIR / "previews"
     preview_dir.mkdir(parents=True, exist_ok=True)
     preview_path = preview_dir / f"EP_{episode}_rename_preview.csv"
@@ -865,9 +870,12 @@ def run_gui() -> None:
     # Step 3 is reserved exclusively for the Cycle 1 schedule.
     cycle1_page = pages[2]
     ttk.Label(cycle1_page, text="Danh sách tại đây chỉ dành cho Cycle 1.").pack(anchor="w", pady=(0, 8))
+    from schedule_table_colors import add_legend, configure_tree, build_context, row_style
+    add_legend(cycle1_page)
     cycle1_frame = ttk.Frame(cycle1_page)
     cycle1_frame.pack(fill="both", expand=True)
     cycle1_tree = ttk.Treeview(cycle1_frame, columns=("order", "name", "duration", "start", "end"), show="headings")
+    configure_tree(cycle1_tree)
     for key, label, width in (("order", "STT", 55), ("name", "Nội dung Cycle 1", 520), ("duration", "Thời lượng", 100), ("start", "Bắt đầu", 100), ("end", "Kết thúc", 100)):
         cycle1_tree.heading(key, text=label)
         cycle1_tree.column(key, width=width, stretch=(key == "name"))
@@ -876,9 +884,11 @@ def run_gui() -> None:
     for index, text in ((3, "Các cycle sẽ được tạo từ Cycle 1 và rule Excel."), (4, "File M3U sẽ được xuất ở bước này."), (5, "Kết quả kiểm tra lịch — xem mốc MT, cuối ngày và các mục cần xử lý.")):
         ttk.Label(pages[index], text=text, font=("Segoe UI", 11)).pack(anchor="w")
     schedule_result = {}
+    add_legend(pages[3])
     all_cycles_frame = ttk.Frame(pages[3])
     all_cycles_frame.pack(fill='both', expand=True)
     all_cycles = ttk.Treeview(all_cycles_frame, columns=('cycle','block','name','length','end'), show='headings')
+    configure_tree(all_cycles)
     for key,label,width in [('cycle','Cycle',60),('block','Block',60),('name','Nội dung',540),('length','Length',110),('end','Kết thúc',110)]:
         all_cycles.heading(key,text=label); all_cycles.column(key,width=width)
     all_cycles_scroll = ttk.Scrollbar(all_cycles_frame, orient='vertical', command=all_cycles.yview)
@@ -1242,10 +1252,12 @@ def run_gui() -> None:
             schedule = build_schedule(Path(current_result["config_path"]))
             from schedule_timing import clock as precise_clock
             schedule_result.clear();schedule_result.update(schedule)
+            color_context=build_context(schedule)
             all_cycles.delete(*all_cycles.get_children())
             for c in schedule['cycles']:
                 for r in c['rows']:
-                    all_cycles.insert('', 'end', values=(c['cycle'],r['block'],r['name'],precise_clock(r['duration']),precise_clock(r['end_seconds'])))
+                    tag,name=row_style(r,color_context)
+                    all_cycles.insert('', 'end', values=(c['cycle'],r['block'],name,precise_clock(r['duration']),precise_clock(r['end_seconds'])),tags=(tag,) if tag else ())
             export_status.set(('ĐẠT' if schedule['valid'] else 'BẢN NHÁP — xem QC')+'\n'+schedule['m3u_path']+'\nTimeline: '+schedule['timeline_path'])
             report=Path(schedule['qc_path']).read_text('utf-8-sig')
             display_report(qc_text,report)
@@ -1259,7 +1271,8 @@ def run_gui() -> None:
             for index, row in enumerate(cycle1, 1):
                 start = row.get('start_seconds',elapsed)
                 elapsed = row.get('end_seconds',start+row['duration'])
-                cycle1_tree.insert("", "end", values=(index, f"[B{row['block']}] {row['name']}", clock(row["duration"]), clock(start), clock(elapsed)))
+                tag,name=row_style(row,color_context)
+                cycle1_tree.insert("", "end", values=(index, f"[B{row['block']}] {name}", clock(row["duration"]), clock(start), clock(elapsed)),tags=(tag,) if tag else ())
             if schedule["missing"] and notify:
                 messagebox.showwarning("Tạo lịch — bản nháp", '\n'.join(schedule['missing']) + '\n\nM3U: '+schedule['m3u_path']+'\nQC: '+schedule['qc_path'])
             elif not schedule["missing"] and notify:
@@ -1294,7 +1307,7 @@ def run_gui() -> None:
 
     def run_all() -> None:
         persist_bulk()
-        controls=list(command_bar.winfo_children())+[run_button,prepare_button,update_prepare_button]
+        controls=list(command_bar.winfo_children())+[run_button,prepare_button,update_prepare_button,media_choices_button]
         states=[(widget,str(widget.cget('state'))) for widget in controls if 'state' in widget.keys()]
         for widget,_state in states: widget.configure(state='disabled')
         try:
@@ -1350,6 +1363,8 @@ def run_gui() -> None:
         except Exception as exc:
             messagebox.showerror('Chạy tất cả',str(exc))
         finally:
+            from missing_media import clear_one_time_skips
+            clear_one_time_skips(current_result.get('episode') if current_result else None)
             for widget,state in states: widget.configure(state=state)
             root.config(cursor='')
 
@@ -1471,6 +1486,23 @@ def run_gui() -> None:
     ttk.Button(command_bar, text="Scan EP", command=do_scan).pack(side="left")
     ttk.Button(command_bar, text="Tạo EP", command=create_ep).pack(side="left", padx=(6, 0))
     ttk.Button(command_bar, text="Tạo lịch", command=create_schedule).pack(side="left", padx=(6, 0))
+    def manage_media_choices():
+        if str(current_result.get('episode',''))!=episode_var.get().strip():
+            if not do_scan():return
+        if not current_result:return
+        if not save_edits(notify=False):return
+        from missing_media import resolve_dialog
+        try:
+            _,changed=resolve_dialog(root,current_result,manage=True)
+            if changed:
+                refresh_selected_sources()
+                build_status.set('Đã lưu lựa chọn file / Skip cho EP này. Chạy tất cả để áp dụng.')
+        except Exception as exc:
+            messagebox.showerror('Chọn lại file / Skip',str(exc))
+    media_choices_button=tk.Button(sidebar,text='Files / Skip',command=manage_media_choices,
+                                   bg='#FFD54F',fg='#202020',activebackground='#FFC107',
+                                   font=('Segoe UI',10,'bold'),relief='flat',pady=8,cursor='hand2')
+    media_choices_button.pack(before=steps,fill='x',pady=(0,10))
     ttk.Button(notice_bar, text="Nhận diện", command=detect_start_block).pack(side="right")
     aux_buttons = ttk.Frame(scan_page)
     aux_buttons.grid(row=3, column=0, columnspan=4, sticky="e", pady=(8, 0))

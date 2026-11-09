@@ -153,12 +153,20 @@ def build_schedule(config_path: Path) -> dict:
         for block in order:
             selected: list[Path] = []
             if block == 1:
-                from ap_rules import slot_family,select_parts,expected_parts
+                from ap_rules import slot_family,select_parts,expected_parts,latest_part_files,part_variant,latest_part_rows
                 config['program']['slot1_family']=slot_family(config['episode'],config['program'],files)
                 if config['program']['slot1_family']=='AP':
-                    selected,ap_missing=select_parts(files,config['episode'],expected_parts(config,default=''))
+                    preferred=[r['target_name'] for r in latest_part_rows(config.get('rename_preview',{}).get('items',[])) if r.get('rule')=='ap-part']
+                    variants=latest_part_files(files,config['episode'],preferred)
+                    selected,ap_missing=select_parts(files,config['episode'],expected_parts(config,default=''),preferred)
                     all_missing.update(ap_missing)
-                    for part in selected:rows.append(dict(cycle=cycle,block=block,name=part.name,path=str(part),duration=durations[part.name]))
+                    for part in selected:
+                        row=dict(cycle=cycle,block=block,name=part.name,path=str(part),duration=durations[part.name])
+                        letter,no_max=part_variant(part.name)
+                        maximum=variants.get((letter,False)) if no_max else None
+                        if maximum and durations[maximum.name]>row['duration']:
+                            row['alternative']=dict(path=str(maximum),name=maximum.name,duration=durations[maximum.name],delta=durations[maximum.name]-row['duration'])
+                        rows.append(row)
                     continue
 
                 from wow_rules import has_wow_intro_outro

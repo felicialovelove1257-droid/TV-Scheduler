@@ -3,7 +3,13 @@ import re
 from pathlib import Path
 
 def is_no_max(item):
-    return bool(re.search(r'no[ _]*(?:smtv[ _]*)?max',item.get('source_name','')+' '+item['target_name'],re.I)) or item.get('draft_variant')=='No Max'
+    text=item.get('source_name','')+' '+item['target_name']
+    explicit=bool(re.search(r'no[ _]*(?:smtv[ _]*)?max',text,re.I))
+    # Some BMD OUT exports abbreviate "No coming up, No Max" as
+    # "Nocomingup n Max". Limit this shorthand to that context so a normal
+    # title containing "N Max" is not reclassified.
+    short_no_max=bool(re.search(r'no[ _-]*coming[ _-]*up.*\bn[ _-]+max\b',text,re.I))
+    return explicit or short_no_max or item.get('draft_variant')=='No Max'
 
 def is_draft_item(item):
     return bool(item.get('draft_duration') or item.get('draft_out_variant'))

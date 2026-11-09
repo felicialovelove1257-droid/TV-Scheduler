@@ -91,6 +91,37 @@ def teaser_key(cycle, path):
     return cycle, str(path).casefold()
 
 
+def removable_fn_copies(rows):
+    """Offer only one redundant FN per cycle; preserve its other occurrence."""
+    groups={}
+    for i,r in enumerate(rows):
+        if r.get('kind')=='teaser' and re.search(r'\bFN\d*\b',r['name'],re.I):
+            groups.setdefault(r['cycle'],[]).append(i)
+    return {indices[-1] for indices in groups.values() if len(indices)>1}
+
+
+def place_show_teasers(rows, paths, make, missing):
+    """Reserve actual segmented-show gaps before ordinary fillers are added."""
+    rows=mark_insert_slots(list(rows))
+    for cycle in sorted({r['cycle'] for r in rows}):
+        for path in paths:
+            if any(r['cycle']==cycle and r.get('path')==str(path) for r in rows):continue
+            extra=make(path,cycle,0,'teaser')
+            candidates=[i for i,r in enumerate(rows) if r['cycle']==cycle and r.get('kind')=='program'
+                        and r.get('insert_slot')
+                        and (extra['duration']<120 or r['insert_slot']=='between_shows')
+                        and (i+1==len(rows) or rows[i+1].get('kind') not in INSERT_KINDS)]
+            if not candidates:
+                missing.append(f'Cycle {cycle}: thiếu chỗ chèn teaser {path.name}')
+                continue
+            i=min(candidates,key=lambda j:(not rows[j].get('required_insert',False),j))
+            anchor=rows[i];extra['block']=anchor['block']
+            extra['preferred_teaser_position']=bool(anchor.get('required_insert'))
+            extra['boundary']=anchor.pop('boundary','nwn_segment' if anchor.get('required_insert') else 'program')
+            anchor.pop('free_slot',None);rows.insert(i+1,extra)
+    return rows
+
+
 def fill_segment_gaps(rows, teasers, options, assets, make, missing, fallback_teasers=()):
     result=[]
     short_teasers=[p for p in teasers if 0<assets.duration(p)<120]
@@ -107,8 +138,9 @@ def fill_segment_gaps(rows, teasers, options, assets, make, missing, fallback_te
         available=[p for p in short_teasers if used[teaser_key(r['cycle'],p)]<teaser_limit(p)]
         choices=available or [p for p in short_ads if teaser_key(r['cycle'],p) not in used_ads]
         fallback_used=False
-        if not choices and fallback:
-            choices=sorted(fallback,key=lambda p:used[teaser_key(r['cycle'],p)])
+        eligible_fallback=[p for p in fallback if teaser_limit(p)!=2 or used[teaser_key(r['cycle'],p)]<2]
+        if not choices and eligible_fallback:
+            choices=sorted(eligible_fallback,key=lambda p:used[teaser_key(r['cycle'],p)])
             available=choices;fallback_used=True
         if not choices:
             missing.append(f"Cycle {r['cycle']}: cần teaser/ADS dưới 2 phút sau {r['name']}")
@@ -493,6 +525,12 @@ def finish_schedule(config, output, assets, directory):
     teasers=[p for p in files if re.match(r'(TSER|TEASER) ',p.name,re.I) and eligible_teaser(p.name,ep)]
     ts_fn=[p for p in teasers if re.search(r'\bFN\d*\b',p.name,re.I)]
     from teaser_selection import current_fn_targets,is_fn_teaser
+    from missing_media import skipped_teaser_slots,one_time_teaser_slots
+    skipped_teasers=skipped_teaser_slots(ep)|one_time_teaser_slots(ep)
+    def teaser_slot(p):
+        return next((slot for slot in ('FN','WOW','AP') if re.search(r'\b'+slot+r'\d*\b',p.name,re.I)),'SHOW')
+    teasers=[p for p in teasers if teaser_slot(p) not in skipped_teasers]
+    ts_fn=[p for p in ts_fn if 'FN' not in skipped_teasers]
     active_fn=current_fn_targets(config)
     if active_fn:
         teasers=[p for p in teasers if not is_fn_teaser(p.name) or p.name.casefold() in active_fn]
@@ -505,13 +543,14 @@ def finish_schedule(config, output, assets, directory):
     if explicit:ts_ap=explicit
     ts_wow=[p for p in teasers if re.search(r'\bWOW\b',p.name,re.I)]
     ts_other=[p for p in teasers if p not in ts_fn+ts_wow+all_ap]
-    need_fn=bool(output['fn'] and config.get('schedule_settings',{}).get('tser_fn',True))
+    need_fn=bool(output['fn'] and config.get('schedule_settings',{}).get('tser_fn',True) and 'FN' not in skipped_teasers)
     if not need_fn:ts_fn=[]
     from wow_rules import needs_next_wow_teaser
-    need_wow=needs_next_wow_teaser(config)
+    need_wow=needs_next_wow_teaser(config) and 'WOW' not in skipped_teasers
     if not need_wow:ts_wow=[]
-    required_teasers=([('WOW ngày sau',ts_wow)] if need_wow else [])+[('show ngày sau',ts_other)]
-    if campaign:required_teasers.append((f"AP {campaign['episode']} {campaign['phase']}",ts_ap))
+    required_teasers=([('WOW ngày sau',ts_wow)] if need_wow else [])
+    if 'SHOW' not in skipped_teasers:required_teasers.append(('show ngày sau',ts_other))
+    if campaign and 'AP' not in skipped_teasers:required_teasers.append((f"AP {campaign['episode']} {campaign['phase']}",ts_ap))
     ts_slot=ts_wow if need_wow else ts_ap if campaign else []
     for label,group in required_teasers+([('FN',ts_fn)] if need_fn else []):
         if not group:missing.append('Thiếu teaser '+label+'; bổ sung file hoặc thời lượng bản nháp.')
@@ -540,17 +579,18 @@ def finish_schedule(config, output, assets, directory):
                 if 'NO MAX' in r['name'].upper():
                     regular=re.sub(r'\s*\(No Max\)|\s+NO MAX','',r['name'],flags=re.I)
                     p=next((p for p in files if p.name.casefold()==regular.casefold()),None)
-                    if p:
+                    if p and not r.get('alternative'):
                         seconds=assets.duration(p)
                         if seconds>r['duration']: r['alternative']=dict(path=str(p),name=p.name,duration=seconds,delta=seconds-r['duration'])
                 nwn_order=[b for b in output['block_order'] if b in (4,8)]
                 ts=[]
-                if 'NWN S1C' in r['name']:
-                    ts=ts_slot if block==nwn_order[0] else ts_other
-                elif block in (2,5) and j==0 and len(group)>1 and not r.get('continuous_show'):
-                    ts=ts_fn if output['fn'] else ts_other
+                if re.search(r'\bNWN S2\b',r['name'],re.I) and any(re.search(r'\bNWN S3\b',n['name'],re.I) for n in group[j+1:]):
+                    ts=ts_fn
+                elif 'NWN S1C' in r['name']:
+                    ts=ts_other
                 if len(ts)==1 and teaser_counts[teaser_key(c,ts[0])]<teaser_limit(ts[0]):
                     expanded.append(make(ts[0],c,block,'teaser'))
+                    if ts is ts_fn:expanded[-1]['preferred_teaser_position']=True
                     teaser_counts[teaser_key(c,ts[0])]+=1
                 if block in (4,8) and re.search(r'NWN (S1C|S2|S3)\b',r['name']): expanded[-1]['boundary']='nwn_segment'
             flat.extend(expanded)
@@ -620,21 +660,9 @@ def finish_schedule(config, output, assets, directory):
     from mt_local import repeat_cycle_ads, optimize_near_mt
     combined=repeat_cycle_ads(flat,pending,make,missing)
     flat,slot_moves,unplaced=allocate_single_slots(mark_insert_slots(combined))
+    flat=place_show_teasers(flat,(ts_wow if len(ts_wow)==1 else [])+(ts_ap if len(ts_ap)==1 else []),make,missing)
     fallback_teasers=[p for p in teasers if (not is_fn_teaser(p.name) or need_fn) and (p not in all_ap or p in ts_ap)]
     flat=fill_segment_gaps(flat,ts_fn+ts_other+ts_slot if output['fn'] else ts_other+ts_slot,optional,assets,make,missing,fallback_teasers)
-    # AP campaign is additional when a next-day WOW teaser is also required.
-    if campaign and len(ts_ap)==1:
-        for cycle in sorted({r['cycle'] for r in flat}):
-            if any(r['cycle']==cycle and r.get('path')==str(ts_ap[0]) for r in flat):continue
-            choices=[i for i,r in enumerate(flat) if r['cycle']==cycle and r['kind']=='program' and r.get('insert_slot')
-                     and (i+1==len(flat) or flat[i+1]['kind'] not in INSERT_KINDS)
-                     and (assets.duration(ts_ap[0])<120 or r['insert_slot']=='between_shows')]
-            if not choices:
-                missing.append(f'Cycle {cycle}: thiếu chỗ chèn teaser AP');continue
-            index=min(choices,key=lambda i:(not bool(re.search(r'NWN S3\b',flat[i]['name'])),i))
-            anchor=flat[index];extra=make(ts_ap[0],cycle,anchor['block'],'teaser')
-            if anchor.get('boundary'):extra['boundary']=anchor.pop('boundary')
-            anchor.pop('free_slot',None);flat.insert(index+1,extra)
     from teaser_spacing import spread_teasers
     flat,teaser_moves=spread_teasers(flat)
     output['teaser_spacing_changes']=teaser_moves

@@ -35,18 +35,18 @@ def optimize_near_mt(rows, options, assets, target, optimize, assign):
         if r.get('boundary') and previous_program and re.search(r'\bNWN\s+S(?:1[ABC]?|2)\b',previous_program.get('name',''),re.I):
             r['_mt_saved_boundary']=r.pop('boundary')
         preferred.append(r)
-    for allow_priority in (False,True):
-        result=_optimize_near_mt(preferred,options,assets,target,optimize,assign,allow_priority)
+    for allow_priority,allow_fn in ((False,False),(False,True),(True,True)):
+        result=_optimize_near_mt(preferred,options,assets,target,optimize,assign,allow_priority,allow_fn)
         if result[1] and abs(result[1][3])<=15:
             for r in result[0]:
                 if '_mt_saved_boundary' in r:r['boundary']=r.pop('_mt_saved_boundary')
             return result
-        fallback=_optimize_near_mt(rows,options,assets,target,optimize,assign,allow_priority)
+        fallback=_optimize_near_mt(rows,options,assets,target,optimize,assign,allow_priority,allow_fn)
         if fallback[1] and abs(fallback[1][3])<=15:return fallback
     return fallback
 
 
-def _optimize_near_mt(rows, options, assets, target, optimize, assign, allow_priority=False):
+def _optimize_near_mt(rows, options, assets, target, optimize, assign, allow_priority=False,allow_fn=False):
     # First exhaust Max/No Max changes while preserving every ADS position.
     initial=optimize(rows,[],assets,target,tolerance=15)
     if initial and abs(initial[3])<=15:return rows,initial,[]
@@ -58,6 +58,8 @@ def _optimize_near_mt(rows, options, assets, target, optimize, assign, allow_pri
     best=(rows,initial,[]);best_gap=abs(initial[3]) if initial else float('inf')
     cycles=sorted({r['cycle'] for r in rows})
     options=list(dict.fromkeys(options))
+    from schedule_timing import removable_fn_copies
+    fn_removable=removable_fn_copies(rows) if allow_fn else set()
     # Expand backwards by one cycle only after all nearer boundaries fail.
     for depth in range(len(cycles)):
         for end,base in sorted(boundaries,key=lambda v:abs(target-v[1])):
@@ -73,7 +75,7 @@ def _optimize_near_mt(rows, options, assets, target, optimize, assign, allow_pri
                 anchor=next((p for p in reversed(prefix[:index]) if p.get('kind')=='program'),None)
                 return bool(anchor and anchor.get('required_insert'))
             removable=[i for i,r in enumerate(prefix) if r['cycle'] in allowed
-                       and r.get('kind') in (('optional','intro','PRIORITY') if allow_priority else ('optional','intro')) and not r.get('priority_name')
+                       and (r.get('kind') in (('optional','intro','PRIORITY') if allow_priority else ('optional','intro')) or i in fn_removable) and not r.get('priority_name')
                        and not required_gap(i)]
             swaps=[i for i,r in enumerate(prefix) if r.get('alternative')]
             gap=target-base

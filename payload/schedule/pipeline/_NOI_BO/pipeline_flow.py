@@ -56,7 +56,7 @@ SECTIONS = [
 
 SECTIONS.insert(3, ('Cập nhật nguồn mới', 'Tất cả chương trình: ưu tiên phiên bản nguồn cao hơn; cùng phiên bản và cùng tên local thì lấy file sửa mới nhất. Khi đường dẫn, dung lượng hoặc thời điểm sửa nguồn thay đổi, Tạo EP cập nhật temp và thời lượng, kể cả tên local đã tồn tại. Bản No Max tự tạo cũng được cập nhật theo nguồn. Kiểm tra nguồn ổn định trước khi cập nhật.'))
 
-SECTIONS.insert(4, ('Số lần teaser mỗi cycle', 'Mỗi teaser được dùng tối đa 1 lần mỗi cycle; riêng TSER FN tối đa 2 lần. Chỗ chèn giữa segment còn thiếu dùng ADS dưới 2 phút; không lặp teaser để lấp chỗ.'))
+SECTIONS.insert(4, ('Vị trí teaser mỗi cycle', 'TSER FN ưu tiên 2 lần mỗi cycle đầy đủ, sau S2 và trước S3 ở mỗi lượt NWN. Khi canh giờ không đạt có thể giảm còn 1 lần. AP và WOW ưu tiên khe giữa hai segment của show thường; nếu khe không phù hợp mới dùng vị trí khác. Teaser trong khe segment phải dưới 2 phút. Cycle cuối chỉ xét phần lịch còn lại.'))
 
 SECTIONS.insert(1, ('Đọc chuỗi chương trình', 'Thông báo bắt đầu: đọc tiếp chuỗi chương trình sau dấu /, ví dụ BMD followed by NWN FN/WOW là BMD → NWN → WOW, chọn block 7. Vẫn đối chiếu số EP và thứ tự thực tế.'))
 
@@ -158,6 +158,7 @@ SECTIONS.insert(9, ('Canh cuối ngày: ưu tiên và phối hợp', 'Khi thiế
 SECTIONS.append(('Teaser FN nguồn thay temp cũ', 'Khi nguồn EP có teaser FN thật, dùng các teaser FN đã quét từ nguồn và bỏ lựa chọn tay/temp FN cũ khỏi danh sách dựng lịch. Không dùng tên temp cũ làm teaser SHOW. Nếu nguồn có nhiều teaser FN thật vẫn hỏi chọn; không tự đoán. Browse teaser FN chỉ nhận file TSER/TEASER FN, không nhận chương trình S1B.'))
 
 SECTIONS.append(('Cột thời gian All cycles', 'All cycles: Length là thời lượng riêng của từng mục; End là thời gian cộng dồn từ đầu playlist đến hết mục đó, không đặt lại ở đầu mỗi cycle.'))
+SECTIONS.append(('Màu trong bảng Cycle', 'Hai bảng Cycle 1 và All cycles dùng cùng màu: show chương trình giữ nền trắng; teaser màu xanh dương; ADS cố định màu cam; ADS ngày màu xanh lá; ADS ngày xuất hiện dưới 3 cycle vẫn nền xanh lá nhưng chữ đỏ; ADS được thêm ngoài danh sách ngày màu tím; marker, Meditation và ADS sự kiện đặc biệt màu xanh ngọc. Dòng có lỗi hoặc dùng dữ liệu tạm có nền vàng và dấu cảnh báo.'))
 
 SECTIONS.append(('Dịch vị trí MT theo số show', 'MT shift (shows) chọn từ -5 đến +5 và nhớ lần chọn cuối. 0 dùng vị trí tự động bình thường. Số âm chọn ranh giới sớm hơn, số dương muộn hơn đúng số show so với kết quả tự động của cùng dữ liệu. Một show tính theo block, không theo segment hay ADS. Sau khi chọn ranh giới, tính lại Max/ADS và cuối ngày; mốc giờ MT vẫn giữ như cũ. Nếu không canh được ±15 giây thì báo QC, không tự bỏ lựa chọn và nhảy sang show khác. Ngoài số show đã dựng thì báo lỗi.'))
 
@@ -165,7 +166,10 @@ SECTIONS.append(('Cập nhật chương trình qua GitHub', 'Update PIP kiểm t
 
 SECTIONS.append(('Thư mục trong cửa sổ file thiếu', 'Cột Folder giữa Type và File / QC issue hiển thị nguyên tiêu đề nhóm ADS trong INPUT để tìm thư mục nguồn. Đây là gợi ý theo bảng, không phải đường dẫn đã xác minh. Mục không có tiêu đề nhóm hiển thị dấu gạch ngang.'))
 
-SECTIONS.append(('Bỏ qua ADS trong ngày', 'Trong cửa sổ file thiếu, Skip today cạnh Browse bỏ ADS khỏi EP đang làm, kể cả ADS ưu tiên và ADS bù cuối ngày. Lưu riêng theo EP; ngày khác không bị ảnh hưởng. Bấm Recheck and continue để tính lại. Undo skip hoặc Browse thành công trên dòng đang mở sẽ hủy bỏ qua. Không xóa file và không đổi bảng nhận diện chung.'))
+SECTIONS.append(('Bỏ qua ADS hoặc teaser', 'Trong cửa sổ file thiếu, ADS và teaser SHOW/FN/WOW/AP đều có menu Skip: Skip today lưu cho EP hiện tại; Skip 1 time chỉ áp dụng cho lần Run all đang chạy. Dòng vẫn hiện với trạng thái xanh để có thể nhận diện hoặc Browse chọn lại file. Undo skip hoặc Browse thành công sẽ hủy lựa chọn. Không xóa file và không đổi bảng nhận diện chung.'))
+SECTIONS.append(('Chọn lại file / Skip theo EP', 'Nút Files / Skip màu vàng ở thanh bên trái, ngay dưới CÁC BƯỚC, mở lại danh sách ADS, teaser và bộ FN của EP đang chọn, kể cả mục đã tìm thấy hoặc đang Skip. Browse để đổi file; menu Skip để chọn Skip today, Skip 1 time hoặc Undo skip. Skip today được lưu riêng cho EP; Skip 1 time áp dụng cho lần Run all tiếp theo trong phiên PIP hiện tại. Đóng bảng rồi Chạy tất cả để áp dụng.'))
+SECTIONS.append(('AP nhiều phiên bản cùng part', 'Mỗi part AP giữ bản mới nhất theo version, cùng version lấy thời gian sửa đổi mới hơn. Max và No Max chọn riêng, giữ một bản mới nhất mỗi loại. File nguồn hiện tại được ưu tiên hơn temp local cũ. Dựng lịch dùng lựa chọn của Scan EP; No Max làm bản cơ sở và Max làm phương án canh giờ, không phát cả hai liên tiếp.'))
+SECTIONS.append(('Nhận diện BMD No Max viết tắt', 'BMD OUT có tên dạng Nocomingup n Max được hiểu là No coming up / No Max. PIP không coi chữ Max trong cách viết tắt này là bản Max và không tạo thêm bản No Max bằng cách trừ thời lượng Max. Các tên Max thông thường vẫn xử lý như cũ.'))
 
 SECTIONS.append(('Start notice diagnostics', 'Unknown program notices show the unrecognized text, accepted program codes for the current EP and how to correct it. VEGC is accepted for an active Veganism Cooking Show. Recognized programs in the wrong order report the current block order.'))
 

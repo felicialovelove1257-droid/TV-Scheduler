@@ -6,6 +6,8 @@ from pathlib import Path
 from portable_paths import ADS_ROOT, EXPORT_ROOT
 
 BASE=Path(__file__).resolve().parent
+_ONE_TIME_TEASER_SKIPS={}
+_ONE_TIME_AD_SKIPS={}
 
 
 def atomic_json(path, data):
@@ -34,6 +36,51 @@ def set_ad_skip(episode,name,skip=True):
     data['skipped_ads']=[n for n in data.get('skipped_ads',[]) if filename_key(n)!=filename_key(name)]
     if skip:data['skipped_ads'].append(name)
     atomic_json(choices_path(episode),data)
+
+
+def one_time_skipped_ads(episode):
+    return list(_ONE_TIME_AD_SKIPS.get(int(episode),set()))
+
+
+def set_one_time_ad_skip(episode,name,skip=True):
+    from schedule_assets import filename_key
+    episode=int(episode);slots=_ONE_TIME_AD_SKIPS.setdefault(episode,set())
+    existing=next((value for value in slots if filename_key(value)==filename_key(name)),None)
+    if existing:slots.discard(existing)
+    if skip:slots.add(name)
+    if not slots:_ONE_TIME_AD_SKIPS.pop(episode,None)
+
+
+def skipped_teaser_slots(episode):
+    return {str(name).upper() for name in source_choices(episode).get('skipped_teaser_slots',[])}
+
+
+def set_teaser_skip(episode,name,skip=True):
+    slot=str(name).upper()
+    data=source_choices(episode)
+    slots={str(value).upper() for value in data.get('skipped_teaser_slots',[])}
+    if skip:slots.add(slot)
+    else:slots.discard(slot)
+    data['skipped_teaser_slots']=sorted(slots)
+    atomic_json(choices_path(episode),data)
+
+
+def one_time_teaser_slots(episode):
+    return set(_ONE_TIME_TEASER_SKIPS.get(int(episode),set()))
+
+
+def set_one_time_teaser_skip(episode,name,skip=True):
+    episode=int(episode);slot=str(name).upper()
+    slots=_ONE_TIME_TEASER_SKIPS.setdefault(episode,set())
+    if skip:slots.add(slot)
+    else:slots.discard(slot)
+    if not slots:_ONE_TIME_TEASER_SKIPS.pop(episode,None)
+
+
+def clear_one_time_skips(episode):
+    if episode is not None:
+        _ONE_TIME_TEASER_SKIPS.pop(int(episode),None)
+        _ONE_TIME_AD_SKIPS.pop(int(episode),None)
 
 
 def fn_set(selected):
@@ -114,7 +161,7 @@ def select_teaser(config, selected, name):
 
 def select_ad(config, selected, name):
     from create_episode import make_placeholder,source_duration
-    from schedule_assets import key
+    from schedule_assets import key,filename_key
     source=Path(selected).resolve()
     if re.search(r'need.*fix|do[ _]*not[ _]*air|[\\/]not air[\\/]',str(source),re.I):
         raise ValueError('This file is marked as needing repair or not for airing.')
@@ -142,8 +189,8 @@ def select_ad(config, selected, name):
     return [dict(target_name=target.name,source_path=str(source),target_path=str(target))]
 
 
-def issues(config, result=None):
-    from schedule_assets import Assets
+def issues(config, result=None, include_ready=False):
+    from schedule_assets import Assets,filename_key
     from teaser_selection import eligible_teaser
     from wow_rules import needs_next_wow_teaser
     from ap_rules import ap_campaign
@@ -157,22 +204,36 @@ def issues(config, result=None):
         out.append(dict(kind='qc',name=f"INPUT_3 has no ADS row for EP {config['episode']}.",detail='Update and save INPUT.xlsx, then stop Run all and Scan EP again. The daily ADS list is unavailable; MT fitting may fail.'))
     elif not ads_info.get('items'):
         out.append(dict(kind='qc',name=f"INPUT_3: the ADS row for EP {config['episode']} is empty.",detail='Check whether this day intentionally has no ADS. If not, update INPUT.xlsx and Scan EP again.'))
-    if settings.get('fn') and not any(re.search(r'\bNWN S1B\b',n,re.I) for n in available):
-        out.append(dict(kind='fn',name='FN S1B set',detail='Choose P1A to load its complete set.'))
+    if settings.get('fn'):
+        found_fn=any(re.search(r'\bNWN S1B\b',n,re.I) for n in available)
+        if include_ready or not found_fn:
+            out.append(dict(kind='fn',name='FN S1B set',detail='Choose P1A to load its complete set.',ready=found_fn))
     teasers=[n for n in available if re.match(r'^(TSER|TEASER) ',n,re.I) and eligible_teaser(n,config['episode'])]
-    required=[]
+    required=[];skipped_slots=skipped_teaser_slots(config['episode']);one_time_slots=one_time_teaser_slots(config['episode'])
     if settings.get('fn') and settings.get('tser_fn',True):required.append('FN')
     if needs_next_wow_teaser(config):required.append('WOW')
     if ap_campaign(config['episode']):required.append('AP')
     required.append('SHOW')
+    if include_ready:required=list(dict.fromkeys(required+sorted(skipped_slots|one_time_slots)))
     for slot in required:
-        found=any((not re.search(r'\b(?:FN\d*|WOW|AP)\b',n,re.I)) if slot=='SHOW' else bool(re.search(r'\b'+slot+r'\d*\b',n,re.I)) for n in teasers)
-        if not found:out.append(dict(kind='teaser',name=slot,detail='Missing teaser '+slot))
-    for ad in config.get('ads',{}).get('items',[]):
+        matching=list(dict.fromkeys(n for n in teasers if ((not re.search(r'\b(?:FN\d*|WOW|AP)\b',n,re.I)) if slot=='SHOW' else bool(re.search(r'\b'+slot+r'\d*\b',n,re.I)))))
+        found=bool(matching)
+        if include_ready or not found:
+            mode='today' if slot in skipped_slots else 'once' if slot in one_time_slots else ''
+            out.append(dict(kind='teaser',name=slot,detail='\n'.join(matching) if found else 'Missing teaser '+slot,ready=found,skipped=bool(mode),skipped_mode=mode))
+    ads=list(config.get('ads',{}).get('items',[]))
+    if include_ready:
+        known={filename_key(a['name']) for a in ads}
+        ads += [dict(name=n) for n in skipped_ads(config['episode'])+one_time_skipped_ads(config['episode']) if filename_key(n) not in known]
+    for ad in ads:
         # These INPUT labels are handled by the program/fixed-slot builder,
         # not by the ordinary ADS resolver (same exclusions as finish_schedule).
         if re.search(r'M QY Warn|Daily News Scroll|AD_SMTV INTRO',ad['name'],re.I):continue
-        if not assets.resolve(ad['name']):out.append(dict(kind='ad',name=ad['name'],detail=ad.get('priority_class','OPTIONAL')))
+        found_ad=assets._resolve_unfiltered(ad['name']) if include_ready else assets.resolve(ad['name'])
+        if include_ready or not found_ad:
+            detail=ad.get('priority_class','OPTIONAL')
+            if found_ad:detail+='\n'+str(found_ad)
+            out.append(dict(kind='ad',name=ad['name'],detail=detail,ready=bool(found_ad)))
     if result:
         for ad in result.get('unresolved_ads',[]):
             if not assets.resolve(ad['name']):out.append(dict(kind='ad',name=ad['name'],detail=ad.get('priority','OPTIONAL')))
@@ -195,23 +256,29 @@ def issues(config, result=None):
             if category not in values:values.append(category)
     for issue in out:
         issue['folder']=' / '.join(folders.get(key(issue['name']),[])) if issue['kind']=='ad' else ''
+    saved_ads={filename_key(name) for name in skipped_ads(config['episode'])}
+    once_ads={filename_key(name) for name in one_time_skipped_ads(config['episode'])}
     for issue in out:
-        issue['skipped']=issue['kind']=='ad' and assets.is_skipped(issue['name'])
+        if issue['kind']=='ad':
+            item_key=filename_key(issue['name'])
+            mode='today' if item_key in saved_ads else 'once' if item_key in once_ads else ''
+            issue['skipped']=bool(mode);issue['skipped_mode']=mode
+        elif issue['kind']!='teaser':issue['skipped']=False
     seen=set();return_rows=[]
     for r in out:
         k=(r['kind'],r['name'])
         if k not in seen:seen.add(k);return_rows.append(r)
-    return [r for r in return_rows if not r.get('skipped')]
+    return [r for r in return_rows if not include_ready or r['kind']!='qc']
 
 
-def resolve_dialog(parent, config, result=None):
+def resolve_dialog(parent, config, result=None, manage=False):
     """Returns cancel / continue / retry; individual successful repairs persist."""
     import tkinter as tk
     from tkinter import ttk,filedialog,messagebox
     import threading,queue
-    pending=issues(config,result)
+    pending=issues(config,result,include_ready=manage)
     if not pending:return 'continue',False
-    window=tk.Toplevel(parent);window.title('Run all - missing files and QC');window.geometry('1250x590')
+    window=tk.Toplevel(parent);window.title(('Files / Skip — EP '+str(config['episode'])) if manage else 'Run all - missing files and QC');window.geometry('1250x590')
     window.transient(parent);window.grab_set()
     ttk.Label(window,text='Browse beside each item. FN: select P1A to load its set. Green check = file selection checked and saved.').pack(anchor='w',padx=12,pady=10)
     frame=ttk.Frame(window);frame.pack(fill='both',expand=True,padx=12)
@@ -233,14 +300,23 @@ def resolve_dialog(parent, config, result=None):
     def finish(answer):
         if state['busy']:return
         state['answer']=answer;window.destroy()
-    def toggle_skip(idx):
+    def toggle_skip(idx,mode='today'):
         if state['busy']:return
-        issue=pending[idx];skip=not issue.get('skipped',False)
-        set_ad_skip(config['episode'],issue['name'],skip)
+        issue=pending[idx]
+        if issue['kind']=='teaser':
+            set_teaser_skip(config['episode'],issue['name'],mode=='today')
+            set_one_time_teaser_skip(config['episode'],issue['name'],mode=='once')
+            skip=mode!='undo';issue['skipped_mode']=mode if skip else ''
+        else:
+            set_ad_skip(config['episode'],issue['name'],mode=='today')
+            set_one_time_ad_skip(config['episode'],issue['name'],mode=='once')
+            skip=mode!='undo';issue['skipped_mode']=mode if skip else ''
         issue['skipped']=skip;state['changed']=True
-        skip_buttons[idx].configure(text='Undo skip' if skip else 'Skip today')
-        row_status(idx,'Skipped for this EP — will not be used.' if skip else 'Missing / not recognized',skip)
-        status.set('Saved. Click Recheck and continue to rebuild the schedule.')
+        skip_buttons[idx].configure(text=('Skipped today ▾' if mode=='today' else 'Skipped once ▾' if mode=='once' else 'Skip ▾'))
+        message=('Skipped for this EP — will not be used.' if mode=='today' else
+                 'Skipped once — next Run all only.' if mode=='once' else '✓ Found — can replace' if issue.get('ready') else 'Missing / not recognized')
+        row_status(idx,message,skip or issue.get('ready',False))
+        status.set('Saved for this EP. Run all to apply.' if manage else 'Saved. Click Recheck and continue to rebuild the schedule.')
     skip_buttons={}
     def choose(idx,folder=False):
         if state['busy']:return
@@ -269,9 +345,16 @@ def resolve_dialog(parent, config, result=None):
             for child in controls:child.configure(state='normal')
             if ok:
                 state['changed']=True
-                if issue['kind']=='ad':
-                    set_ad_skip(config['episode'],issue['name'],False)
-                    issue['skipped']=False;skip_buttons[idx].configure(text='Skip today')
+                issue['ready']=True
+                if issue['kind'] in ('ad','teaser'):
+                    if issue['kind']=='teaser':
+                        set_teaser_skip(config['episode'],issue['name'],False)
+                        set_one_time_teaser_skip(config['episode'],issue['name'],False)
+                    else:
+                        set_ad_skip(config['episode'],issue['name'],False)
+                        set_one_time_ad_skip(config['episode'],issue['name'],False)
+                    issue['skipped']=False;issue['skipped_mode']=''
+                    skip_buttons[idx].configure(text='Skip ▾')
                 row_status(idx,'✓ Checked and saved\n'+selected,True)
                 status.set('Saved: '+', '.join(r['target_name'] for r in value))
             else:row_status(idx,'✗ '+value);status.set('Selection failed; choose another file or retry.')
@@ -287,12 +370,20 @@ def resolve_dialog(parent, config, result=None):
         if r['kind']!='qc':
             actions=ttk.Frame(table);actions.grid(row=row,column=4,sticky='ne',padx=8,pady=9)
             button=ttk.Button(actions,text='Browse...',command=lambda idx=i:choose(idx));button.pack(side='left');controls.append(button)
-            if r['kind']=='ad':
-                button=ttk.Button(actions,text='Undo skip' if r.get('skipped') else 'Skip today',command=lambda idx=i:toggle_skip(idx));button.pack(side='left',padx=4);controls.append(button);skip_buttons[i]=button
-                if r.get('skipped'):row_status(i,'Skipped for this EP — will not be used.',True)
+            if r['kind'] in ('ad','teaser'):
+                mode=r.get('skipped_mode','')
+                text='Skipped today ▾' if mode=='today' else 'Skipped once ▾' if mode=='once' else 'Skip ▾'
+                button=ttk.Menubutton(actions,text=text);menu=tk.Menu(button,tearoff=False);button.configure(menu=menu)
+                menu.add_command(label='Skip today',command=lambda idx=i:toggle_skip(idx,'today'))
+                menu.add_command(label='Skip 1 time',command=lambda idx=i:toggle_skip(idx,'once'))
+                menu.add_separator();menu.add_command(label='Undo skip',command=lambda idx=i:toggle_skip(idx,'undo'))
+                button.pack(side='left',padx=4);controls.append(button);skip_buttons[i]=button
+                if mode=='today':row_status(i,'Skipped for this EP — will not be used.',True)
+                elif mode=='once':row_status(i,'Skipped once — this Run all only.',True)
             if r['kind']=='fn':
                 button=ttk.Button(actions,text='Folder...',command=lambda idx=i:choose(idx,True));button.pack(side='left',padx=4);controls.append(button)
-    for text,answer in [('Stop Run all','cancel'),('Continue / view QC','continue'),('Recheck and continue','retry')]:
+    choices=[('Close','continue')] if manage else [('Stop Run all','cancel'),('Continue / view QC','continue'),('Recheck and continue','retry')]
+    for text,answer in choices:
         button=ttk.Button(buttons,text=text,command=lambda a=answer:finish(a));button.pack(side='right',padx=5);controls.append(button)
     window.protocol('WM_DELETE_WINDOW',lambda:finish('cancel'))
     parent.wait_window(window)
