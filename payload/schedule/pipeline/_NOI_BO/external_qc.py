@@ -189,6 +189,8 @@ def audit(path,episode,notice='',verify_media=False):
     inputs=load_inputs();program=extract_program(inputs['INPUT_1'],episode)
     rules=extract_cycle_rules(inputs['INPUT_2'],episode);ads=extract_ads(inputs['INPUT_3'],episode)
     config=dict(episode=episode,local_dir=str(LOCAL_ROOT/f'EP {episode}'),program=program,ads=ads)
+    from ep_content import qc_entries,classify_qc,audit_rows
+    config['manual_content']=qc_entries(episode)
     assets=Assets(config);findings=[];rows=read_m3u(path)
     document_info=rows[0].get('document_info',{})
     summary_cycles=document_info.get('summary_cycles',{})
@@ -226,7 +228,8 @@ def audit(path,episode,notice='',verify_media=False):
             if combined_nwn_s1(source_name):
                 row['docx_combined_s1']=True
                 row['canonical']=canonical=f'{episode} NWN S1ABC.mp4'
-        if re.match(r'^(?:TSER|TEASER)[ _]',name,re.I):row['kind']='teaser'
+        if classify_qc(row,config['manual_content'],episode):pass
+        elif re.match(r'^(?:TSER|TEASER)[ _]',name,re.I):row['kind']='teaser'
         else:
             m=re.match(rf'^{episode}\s+([A-Z0-9]+)\b',canonical,re.I)
             if fn_info:
@@ -235,7 +238,7 @@ def audit(path,episode,notice='',verify_media=False):
                 row.update(kind='program',code=m[1].upper())
             elif re.match(r'^\d{4}\s+',canonical) and not identify(name,episode):
                 note('REVIEW',cycle,row['line'],'Unrecognized program or different EP: '+name)
-        if row['kind']=='teaser' and not eligible_teaser(name,episode):note('ERROR',cycle,row['line'],'Teaser is not eligible for this EP / AP campaign: '+name)
+        if row['kind']=='teaser' and not row.get('manual_explicit') and not eligible_teaser(name,episode):note('ERROR',cycle,row['line'],'Teaser is not eligible for this EP / AP campaign: '+name)
         if not verify_media or is_docx:continue
         p=local_path(row['path'])
         if not p.is_file():
@@ -267,15 +270,16 @@ def audit(path,episode,notice='',verify_media=False):
             if segmented:
                 if len(gap)!=1:note('ERROR',c,a['line'],'Exactly one ADS/teaser is required between segments after '+a['name'])
                 elif not verify_media:pass
-                elif gap[0]['duration'] is None:note('REVIEW',c,gap[0]['line'],'Cannot verify the under-2-minute segment insertion.')
-                elif gap[0]['duration']>=120:note('ERROR',c,gap[0]['line'],'Segment insertion must be under 2 minutes: '+gap[0]['name'])
+                elif gap[0]['kind']=='teaser':pass
+                elif gap[0]['duration'] is None:note('REVIEW',c,gap[0]['line'],'Cannot verify that the segment ADS is under 2 minutes.')
+                elif gap[0]['duration']>=120:note('ERROR',c,gap[0]['line'],'Segment ADS must be under 2 minutes: '+gap[0]['name'])
             elif continuous:
                 unexpected=[r for r in gap if not (code in ('BMD','WOW') and re.match(r'^M intro\b',r['name'],re.I))]
                 if unexpected:note('ERROR',c,unexpected[0]['line'],'ADS/teaser inside continuous '+code+' IN/MAIN/OUT or AP parts.')
             if code=='NWN' and gap:
                 if len(gap)>1:note('ERROR',c,gap[0]['line'],'More than one insertion between NWN parts.')
                 for item in gap:
-                    if item['duration'] is not None and item['duration']>=120:note('ERROR',c,item['line'],'Insertion inside NWN must be under 2 minutes.')
+                    if item['kind']!='teaser' and item['duration'] is not None and item['duration']>=120:note('ERROR',c,item['line'],'ADS inside NWN must be under 2 minutes.')
         if code=='NWN':
             segs=[]
             for r in programs:
@@ -428,7 +432,7 @@ def audit(path,episode,notice='',verify_media=False):
             for r in rows:
                 if r['cycle']!=c:continue
                 canonical=r.get('canonical','').casefold()
-                if r['kind']=='teaser' and eligible_teaser(r['name'],episode) and canonical not in expected_teasers:
+                if r['kind']=='teaser' and not r.get('manual_explicit') and eligible_teaser(r['name'],episode) and canonical not in expected_teasers:
                     note('REVIEW',c,r['line'],'Teaser có trong lịch nhưng không khớp danh sách nguồn EP; kiểm tra tên hoặc file được chọn tay: '+r['name'])
             for missing in sorted(expected_teasers-present):
                 if omitted_tail(missing,c):continue
@@ -457,7 +461,8 @@ def audit(path,episode,notice='',verify_media=False):
             for missing in sorted(expected_fn-present):
                 if not omitted_tail(missing,c):note('REVIEW',c,rows[group['indices'][0]]['line'],'Bộ FN khác nguồn EP (có thể là bộ được chọn tay); cần đối chiếu phần: '+missing)
     if not groups:note('REVIEW',None,None,'No program groups recognized. Check EP and filename conventions.')
-    findings.extend(check_show_content(program,rows,episode))
+    findings.extend(check_show_content(program,[r for r in rows if not r.get('manual_explicit')],episode))
+    for cycle,message in audit_rows(config,rows):note('ERROR',cycle,None,message)
     if summary_cycles:
         findings=[('REVIEW',c,line,'Cycle kế thừa từ Cycle 1; cần xác nhận ngoại lệ DOCX trước khi kết luận: '+vietnamese_finding(message))
                   if level=='ERROR' and c.isdigit() and int(c) in summary_cycles and not message.startswith('Teaser is not eligible for this EP / AP campaign: ') else (level,c,line,message)
@@ -542,8 +547,8 @@ def vietnamese_finding(message):
         'Cannot confirm the show content from this filename (different, abbreviated or ambiguous title).':'Chưa xác nhận được nội dung show từ tên file (tên khác, viết tắt hoặc chưa rõ).',
         'INPUT has no usable content title to compare. File order can be checked, but the subject/title is unverified.':'INPUT không có tiêu đề nội dung đủ rõ để so sánh. Có thể kiểm tra thứ tự file, chưa xác minh được nội dung.',
         'Exactly one ADS/teaser is required between segments after ':'Phải có đúng một ADS/teaser giữa các segment, sau ',
-        'Cannot verify the under-2-minute segment insertion.':'Chưa xác minh được mục chèn giữa segment có dưới 2 phút.',
-        'Segment insertion must be under 2 minutes: ':'Mục chèn giữa segment phải dưới 2 phút: ',
+        'Cannot verify that the segment ADS is under 2 minutes.':'Chưa xác minh được ADS giữa segment có dưới 2 phút.',
+        'Segment ADS must be under 2 minutes: ':'ADS giữa segment phải dưới 2 phút: ',
         'Teaser is not eligible for this EP / AP campaign: ':'Teaser không hợp lệ cho EP hoặc đợt AP này: ',
         'SMTV INTRO is only allowed at the beginning of the cycle.':'SMTV INTRO chỉ được đứng đầu cycle.',
         'NWN segment order is reversed.':'Thứ tự segment NWN bị đảo.',
@@ -569,7 +574,7 @@ def vietnamese_finding(message):
         '; found ':'; thực tế ',
         'ADS/teaser inside continuous ':'ADS/teaser nằm bên trong chương trình liền mạch ',
         'Check the starting-show notice: ':'Kiểm tra thông báo show mở đầu: ',
-        'Insertion inside NWN must be under 2 minutes.':'Mục chèn trong NWN phải dưới 2 phút.',
+        'ADS inside NWN must be under 2 minutes.':'ADS trong NWN phải dưới 2 phút.',
         'No CYCLE markers. Cycle-based rules cannot be verified; add cycle markers to the M3U.':'Không có dấu CYCLE; chưa thể kiểm tra quy tắc từng cycle. Cần thêm dấu cycle vào M3U.',
     }
     for old,new in translations.items():message=message.replace(old,new)

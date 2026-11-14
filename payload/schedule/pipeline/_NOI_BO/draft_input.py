@@ -245,6 +245,11 @@ def merge_reported(config,data):
     apply_choices(config)
 
 def open_editor(root,config):
+    from ep_content_ui import open_editor as content_editor
+    return content_editor(root,config)
+
+
+def open_duration_editor(root,config,persist=True):
     import tkinter as tk
     from tkinter import ttk,messagebox
     path=storage(config);data=json.loads(path.read_text('utf-8')) if path.exists() else {}
@@ -352,7 +357,7 @@ def open_editor(root,config):
                 key=item_key(item)
                 if is_draft_item(item) and key in fields and not is_no_max(item):
                     item['is_max']=fields[key][1].get()=='Max'
-                    remember(config['episode'],item)
+                    if persist:remember(config['episode'],item)
             values={key:{'duration':d.get().strip(),'variant':v.get()} for key,(d,v) in fields.items() if d.get().strip()}
             for key,entry in values.items():
                 if data.get(key,{}).get('fn_estimated_split'):entry['fn_estimated_split']=True
@@ -360,7 +365,7 @@ def open_editor(root,config):
                 except ValueError as exc:raise ValueError(f"{key}: {entry['duration']}\n{exc}") from exc
                 entry['duration']=f'{seconds//60:02}:{seconds%60:02}'
                 fields[key][0].set(entry['duration'])
-            path.write_text(json.dumps(values,ensure_ascii=False,indent=2),encoding='utf-8')
+            if persist:path.write_text(json.dumps(values,ensure_ascii=False,indent=2),encoding='utf-8')
             merge_reported(config,values);accepted[0]=True;window.destroy()
         except Exception as exc:messagebox.showerror('Thời lượng',str(exc),parent=window)
     buttons=ttk.Frame(window,padding=10);buttons.pack(fill='x')

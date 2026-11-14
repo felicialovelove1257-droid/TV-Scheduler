@@ -117,6 +117,9 @@ def build_schedule(config_path: Path) -> dict:
     order = active[active.index(start):] + active[:active.index(start)]
     local = Path(config["local_dir"])
     files = sorted(local.glob("*.mp4"), key=natural_key)
+    from ep_content import explicit_entries
+    hidden=set(config.get('manual_excluded',[]))|{e['target_name'] for e in explicit_entries(config)}
+    files=[p for p in files if p.name not in hidden]
     raw_sources={str(Path(i['source_path'])).casefold() for i in config.get('rename_preview',{}).get('items',[])
                  if i.get('source_path') and i['source_path']!=i['target_path'] and Path(i['target_path']).exists()}
     files=[p for p in files if str(p).casefold() not in raw_sources]
@@ -174,7 +177,7 @@ def build_schedule(config_path: Path) -> dict:
                     main=find_one(files,f"{config['episode']} WOW ",exclude=(' WOW IN',' WOW OUT','TSER','TEASER','(WEBLINK)'))
                     if main:
                         rows.append(dict(cycle=cycle,block=block,name=main.name,path=str(main),duration=durations[main.name]))
-                    else:all_missing.add('Block 1: WOW — bản thường, tên show không có weblink')
+                    else:all_missing.add(f"Không tìm thấy file chương trình WOW trong thư mục EP {config['episode']}.")
                     continue
                 wow_seen += 1
                 treatment = wow_treatment(rules, cycle) if wow_seen == 1 else ""
@@ -264,6 +267,8 @@ def build_schedule(config_path: Path) -> dict:
         'reported_items':[{'name':i['target_name'],'seconds':i['draft_duration']} for i in reported],
     }
     assets.save()
+    from ep_content import apply_program_rows
+    apply_program_rows(config,output,assets)
     from schedule_timing import finish_schedule
     output = finish_schedule(config, output, assets, config_path.parent)
     out_path = config_path.parent / f"EP_{config['episode']}_schedule_draft.json"
@@ -276,7 +281,16 @@ def show_code(text):
     normalized=re.sub(r'[^a-z0-9]+','',text.casefold())
     if 'veganism' in normalized and 'cookingshow' in normalized:return 'VEGC'
     if normalized in {'hl','healthy','healthyliv','healthyliving'}:return 'HL'
-    if normalized in {'iv','inner','innervision','innervisioniv'}:return 'IV'
+    if normalized in {'iv','inner','innervision','innervisions','innervisioniv'}:return 'IV'
     aliases = {"nature's beauty": 'NB', 'veganism: the noble way of living': 'VEG',
                'animal world': 'AW', 'a journey through aesthetic realms': 'AJAR'}
     return aliases.get(text.casefold(), text.split()[0] if text else '')
+
+
+def show_aliases(text):
+    """Names that may stand for one INPUT show code in notices and filenames."""
+    code=show_code(text).upper()
+    aliases={code,str(text).strip().upper()}
+    if code=='IV':aliases.update({'INNER','INNER VISION','INNER VISIONS','INNER VISION (IV)','INNER VISION IV'})
+    elif code=='HL':aliases.update({'HL','HEALTHY','HEALTHY LIV','HEALTHY LIVING'})
+    return {value for value in aliases if value}

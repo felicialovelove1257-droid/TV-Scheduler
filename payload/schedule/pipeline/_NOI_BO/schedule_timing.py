@@ -10,6 +10,10 @@ def clock(seconds):
 
 INSERT_KINDS={'teaser','intro','fixed','PRIORITY','DO_NOT_SKIP','optional'}
 
+def segment_insert_allowed(row):
+    """Teasers may be any duration; every other segment insert stays under two minutes."""
+    return row.get('kind')=='teaser' or 0<row.get('duration',0)<120
+
 def insertion_conflicts(rows):
     previous=None; conflicts=[]
     for r in rows:
@@ -39,7 +43,7 @@ def allocate_single_slots(rows):
     anchor=None
     for r in list(rows):
         if r.get('kind')=='program': anchor=r
-        elif r.get('kind') in INSERT_KINDS and r['kind']!='intro' and r.get('duration',0)>=120:
+        elif r.get('kind') in INSERT_KINDS and r['kind']!='intro' and not segment_insert_allowed(r):
             if anchor is not None and anchor.get('insert_slot')=='inside_show':
                 rows.remove(r);overflow.append(r)
     rank=lambda r: (0 if r.get('priority_name') else 1 if r['kind'] in ('fixed','DO_NOT_SKIP') else 2 if r['kind']=='PRIORITY' else 3 if r['kind']=='teaser' else 4)
@@ -56,7 +60,7 @@ def allocate_single_slots(rows):
             if anchor['cycle']!=r['cycle'] or anchor.get('kind')!='program': continue
             slot=anchor.get('insert_slot')
             if not slot and not anchor.get('boundary'): continue
-            if r.get('duration',0)>=120 and slot=='inside_show': continue
+            if not segment_insert_allowed(r) and slot=='inside_show': continue
             if i+1<len(rows) and rows[i+1].get('kind') in INSERT_KINDS: continue
             candidates.append(i)
         if not candidates and r['kind'] in ('PRIORITY','DO_NOT_SKIP'):
@@ -109,7 +113,6 @@ def place_show_teasers(rows, paths, make, missing):
             extra=make(path,cycle,0,'teaser')
             candidates=[i for i,r in enumerate(rows) if r['cycle']==cycle and r.get('kind')=='program'
                         and r.get('insert_slot')
-                        and (extra['duration']<120 or r['insert_slot']=='between_shows')
                         and (i+1==len(rows) or rows[i+1].get('kind') not in INSERT_KINDS)]
             if not candidates:
                 missing.append(f'Cycle {cycle}: thiếu chỗ chèn teaser {path.name}')
@@ -124,9 +127,9 @@ def place_show_teasers(rows, paths, make, missing):
 
 def fill_segment_gaps(rows, teasers, options, assets, make, missing, fallback_teasers=()):
     result=[]
-    short_teasers=[p for p in teasers if 0<assets.duration(p)<120]
+    eligible_teasers=[p for p in teasers if assets.duration(p)>0]
     short_ads=[p for p in options if 0<assets.duration(p)<120]
-    fallback=[p for p in dict.fromkeys(fallback_teasers) if 0<assets.duration(p)<120]
+    fallback=[p for p in dict.fromkeys(fallback_teasers) if assets.duration(p)>0]
     from collections import Counter
     used=Counter(teaser_key(r['cycle'],r['path']) for r in rows if r.get('kind')=='teaser')
     used_ads={(r['cycle'],str(r.get('path','')).casefold()) for r in rows if r.get('kind') in INSERT_KINDS}
@@ -135,7 +138,7 @@ def fill_segment_gaps(rows, teasers, options, assets, make, missing, fallback_te
         if not r.get('required_insert'): continue
         following=rows[i+1] if i+1<len(rows) else {}
         if following.get('kind') in INSERT_KINDS: continue
-        available=[p for p in short_teasers if used[teaser_key(r['cycle'],p)]<teaser_limit(p)]
+        available=[p for p in eligible_teasers if used[teaser_key(r['cycle'],p)]<teaser_limit(p)]
         choices=available or [p for p in short_ads if teaser_key(r['cycle'],p) not in used_ads]
         fallback_used=False
         eligible_fallback=[p for p in fallback if teaser_limit(p)!=2 or used[teaser_key(r['cycle'],p)]<2]
@@ -143,7 +146,7 @@ def fill_segment_gaps(rows, teasers, options, assets, make, missing, fallback_te
             choices=sorted(eligible_fallback,key=lambda p:used[teaser_key(r['cycle'],p)])
             available=choices;fallback_used=True
         if not choices:
-            missing.append(f"Cycle {r['cycle']}: cần teaser/ADS dưới 2 phút sau {r['name']}")
+            missing.append(f"Cycle {r['cycle']}: cần teaser hoặc ADS dưới 2 phút sau {r['name']}")
             continue
         extra=make(choices[0],r['cycle'],r['block'],'teaser' if available else 'optional')
         if fallback_used:extra['segment_teaser_fallback']=True
@@ -513,6 +516,9 @@ def optimize(rows, options, assets, target, tolerance=0, repeat_options=()):
 def finish_schedule(config, output, assets, directory):
     missing=output['missing']; unresolved=[]
     ep=config['episode']; files=list(Path(config['local_dir']).glob('*.mp4'))
+    from ep_content import explicit_entries
+    hidden=set(config.get('manual_excluded',[]))|{e['target_name'] for e in explicit_entries(config)}
+    files=[p for p in files if p.name not in hidden]
     rules=config['cycle_rules']; flat=[]
     def make(path,cycle,block,kind):
         return dict(cycle=cycle,block=block,name=path.name,path=str(path),duration=assets.duration(path),kind=kind)
@@ -602,6 +608,8 @@ def finish_schedule(config, output, assets, directory):
             else: flat[-1]['free_slot']=True
             flat[-1]['boundary']='program'
         if fixed: missing.append(f'Cycle {c}: còn ADS cố định chưa có slot')
+    from ep_content import apply_insert_rows
+    flat=apply_insert_rows(config,flat,assets,missing)
     from event_ads import insert_events
     flat,event_expected=insert_events(flat,config,assets,make,missing)
     manifest=Path(config['local_dir'])/'do_not_skip_ads_manifest.csv'; specials={}
@@ -612,7 +620,7 @@ def finish_schedule(config, output, assets, directory):
     pending=[];optional=[]
     profile_items = assets.ad_profile.get('items', [])
     profiled_names = {item['name'] for item in profile_items}
-    expected_priority = []
+    expected_priority = [dict(name=r['priority_name'],cycle=r['cycle'],block=r['block']) for r in flat if r.get('manual_content') and r.get('priority_name')]
     profile_insertions = {}
     active_ads = {item['name'] for item in config.get('ads',{}).get('items',[])}
     for item in profile_items:
@@ -785,8 +793,8 @@ def finish_schedule(config, output, assets, directory):
             anchor=r;gap_inserts=[]
         elif r['kind'] in INSERT_KINDS:
             gap_inserts.append(r)
-            if r['kind']!='intro' and r['duration']>=120 and anchor and anchor.get('insert_slot')=='inside_show':
-                missing.append(f"Cycle {r['cycle']}: mục từ 2 phút cần đặt giữa show: {r['name']}")
+            if r['kind']!='intro' and not segment_insert_allowed(r) and anchor and anchor.get('insert_slot')=='inside_show':
+                missing.append(f"Cycle {r['cycle']}: ADS từ 2 phút cần đặt giữa show: {r['name']}")
     for cycle in output['cycles']:
         cycle['rows']=[r for r in flat if r['cycle']==cycle['cycle']]
         content=[r for r in cycle['rows'] if r['kind']!='marker']
@@ -794,6 +802,8 @@ def finish_schedule(config, output, assets, directory):
             if r['kind']=='intro' and i!=0:
                 missing.append(f"Cycle {cycle['cycle']}: SMTV INTRO cần nằm đầu cycle")
         cycle['duration']=sum(r['duration'] for r in cycle['rows'])
+    from ep_content import audit_rows
+    missing.extend(f'Cycle {c}: {message}' for c,message in audit_rows(config,flat))
     expected_counts=Counter((r['name'],r['cycle']) for r in expected_priority)
     expected_counts.subtract((r['name'],r['cycle']) for r in day_end['removed_priority'])
     expected_counts=+expected_counts

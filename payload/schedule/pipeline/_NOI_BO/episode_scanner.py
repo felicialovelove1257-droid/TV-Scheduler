@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from import_sources import read_shared_strings, read_sheet, sheet_targets
-from schedule_engine import build_schedule, show_code
+from schedule_engine import build_schedule, show_code,show_aliases
 from max_options import is_max, is_no_max, apply_choices, remember
 
 
@@ -149,7 +149,7 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
             nxt = "No NXT"
         else:
             found = re.search(r"NEXT IS\s+([A-Z0-9]+)", upper)
-            nxt = f"UP NXT {found.group(1)}" if found else "OUT"
+            nxt = f"UP NXT {show_code(found.group(1)).upper()}" if found else "OUT"
         suffix = ' (No Max)' if re.search(r'NO[ _]*MAX',upper) else ''
         return f"{episode} BMD OUT ({nxt}){suffix}{ext}", "bmd-outro"
 
@@ -173,7 +173,8 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
     active_codes = [show_code(item.get("code", "")).upper() for item in program.get("active_shows", [])]
     for code in active_codes:
         short_code = code.split()[0] if code else ""
-        if short_code and re.search(rf"\b{re.escape(short_code)}\b", upper) and not re.search(r"\b(?:TSER|TEASER)\b",upper):
+        alias_pattern='|'.join(re.escape(value) for value in sorted(show_aliases(code),key=len,reverse=True))
+        if short_code and re.search(rf"(?<![A-Z0-9])(?:{alias_pattern})(?![A-Z0-9])", upper) and not re.search(r"\b(?:TSER|TEASER)\b",upper):
             segment=re.search(r'\b(?:SEG(?:MENT)?\s*|S)([12])\b',upper)
             show=next((v for v in program.get('active_shows',[]) if show_code(v.get('code','')).upper()==code),{})
             title=shorten_show_title(show.get('title',''))
@@ -192,6 +193,7 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
                 if is_no_next(upper):suffix+=' (No NXT)'
                 return f"{episode} {short_code} {title} S{segment[1]}{suffix}{ext}", 'active-show'
             remainder = re.sub(rf"^{episode}\s+", "", stem, flags=re.I)
+            remainder = re.sub(rf"^(?:{alias_pattern})(?=\s|$)",short_code,remainder,flags=re.I)
             remainder = re.sub(r"\s+V\d+(?=\s|$)", "", remainder, flags=re.I)
             remainder = re.sub(r"\s+", " ", remainder).strip()
             return f"{episode} {remainder}{ext}", "active-show"
@@ -203,8 +205,9 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
         teaser = re.sub(r"(?:[ _])v\d+$", "", teaser, flags=re.I).strip()
         short = re.match(r'^TSER\s+(\d{4})\s+([A-Z][A-Z0-9]*)\b',teaser,re.I)
         if short and not short[2].upper().startswith('FN'):
-            teaser=f'TSER {short[1]} {short[2].upper()}'
-            if short[2].upper()=='AP':
+            teaser_code=show_code(short[2]).upper()
+            teaser=f'TSER {short[1]} {teaser_code}'
+            if teaser_code=='AP':
                 from ap_rules import teaser_phase
                 phase=teaser_phase(stem)
                 if phase is not None:teaser+=' '+('TODAY','TOMORROW','IN 2 DAYS')[phase]
@@ -246,11 +249,19 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
             "source_path": str(source),
             "target_path": str((local_dir.parent / f'EP {source_episode}' if source_episode != episode else local_dir) / target_name),
         })
-    from missing_media import source_choices
+    from missing_media import source_choices, episode_name_issue, valid_episode_acceptance
+    for row in rows:
+        proposal=episode_name_issue(row,episode,program)
+        if proposal:
+            row['episode_name_issue']=proposal
+            row['rule']='review'
+            row['target_name']=clean_local_filename(row['source_name'])
+            row['target_path']=str(local_dir/row['target_name'])
     from teaser_selection import is_fn_teaser
     source_fn_teaser=any(is_fn_teaser(r['source_name']) for r in rows)
     manual=[]
     for choice in source_choices(episode)['items']:
+        if not valid_episode_acceptance(choice):continue
         if source_fn_teaser and choice.get('manual_slot')=='FN':continue
         if Path(choice['source_path']).is_file():manual.append(dict(choice))
         elif Path(choice['target_path']).is_file():
@@ -261,6 +272,8 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         fn_source_episode=int(re.match(r'(\d{4})',manual_fn[0]['target_name'])[1])
     for choice in manual:
         if choice.get('manual_kind')=='fn' and not fn_enabled:continue
+        if choice.get('manual_kind')=='episode-name':
+            rows=[r for r in rows if r['source_path']!=choice['source_path']]
         rows=[r for r in rows if r['target_name'].casefold()!=choice['target_name'].casefold()]
         rows.append(choice)
     from teaser_selection import eligible_teaser
@@ -312,6 +325,8 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         with manifest.open(encoding='utf-8-sig',newline='') as handle:
             draft_targets={r['target_name'] for r in csv.DictReader(handle) if r.get('method')=='reported-duration'}
     for source in sorted(local_dir.glob('*.mp4')):
+        if any(r.get('source_path')==str(source) and r.get('manual_kind')=='episode-name' for r in rows):continue
+        if re.match(r'^\d+ USER ',source.name,re.I):continue
         if manual_fn and has_fn(source):continue
         if program.get('wow_has_intro_outro') is False and re.search(r'\bWOW\s+(?:INTRO|OUTRO|IN|OUT)\b',source.name,re.I):continue
         if source.name in draft_targets:continue
@@ -323,8 +338,12 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         if rule=='event-ad':continue  # Event campaigns must be present in the EP source folder.
         if source_fn_teaser and is_fn_teaser(target_name):continue
         candidate=dict(rule=rule,source_name=source.name,target_name=target_name,source_path=str(source),target_path=str(local_dir/target_name),local_fallback=True)
+        proposal=episode_name_issue(candidate,episode,program)
+        if proposal:
+            candidate.update(episode_name_issue=proposal,rule='review',target_name=source.name,target_path=str(source))
         if not eligible_teaser(target_name,episode):continue
         key=scan_key(candidate)
+        if proposal:key=('episode-name',str(source))
         if key and (key not in occupied or (rule=='ap-part' and key not in source_ap_keys)):
             rows.append(candidate);occupied.add(key)
     rows=latest_part_rows(rows)
@@ -642,6 +661,8 @@ def scan_episode(episode: int) -> dict:
     reported_path=storage(result)
     reported=json.loads(reported_path.read_text(encoding='utf-8')) if reported_path.exists() else {}
     merge_reported(result,reported)
+    from ep_content import apply as apply_content
+    apply_content(result)
     result['rename_preview']['count']=len(result['rename_preview']['items'])
     config_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
@@ -1051,6 +1072,10 @@ def run_gui() -> None:
         try:
             show_page(0)
             episode = int(episode_var.get().strip())
+            # The value currently visible in the selector is the user's latest
+            # choice. Scanning may load an older EP config, but must not replace
+            # this choice before the new scan result is saved.
+            selected_mt_shift = max(-5,min(5,int(mt_shift_var.get() or 0)))
             result = scan_episode(episode)
             output.delete("1.0", "end")
             output.insert("1.0", summary(result))
@@ -1060,7 +1085,7 @@ def run_gui() -> None:
             saved_settings=result.get('schedule_settings',{})
             fn_var.set(saved_settings.get('fn',checkbox_preferences().get("fn",result["program"]["schedule_type"] == "FN")))
             tser_fn_var.set(saved_settings.get('tser_fn',tser_fn_var.get()))
-            mt_shift_var.set(str(max(-5,min(5,int(saved_settings.get('mt_show_shift',mt_shift_var.get() or 0))))))
+            mt_shift_var.set(str(selected_mt_shift))
             offset_var.set(str(saved_settings.get('offset_seconds',0)))
             refresh_active_blocks()
             start_block=saved_settings.get('start_block')
@@ -1144,6 +1169,8 @@ def run_gui() -> None:
         if not current_result:
             messagebox.showinfo("Lưu tên", "Hãy Scan EP trước.")
             return False
+        from ep_content import apply as apply_content
+        apply_content(current_result)
         items = current_result["rename_preview"]["items"]
         current_result["schedule_settings"] = {
             "fn": fn_var.get(),
@@ -1161,7 +1188,7 @@ def run_gui() -> None:
             refreshed = create_rename_preview(Path(current_result['source_dir']), Path(current_result['local_dir']), int(current_result['episode']), program)
             saved_names = {r['source_path']: r['target_name'] for r in items if not r.get('draft_out_variant')}
             for r in refreshed['items']:
-                if r['source_path'] in saved_names:
+                if r['source_path'] in saved_names and not r.get('episode_name_issue'):
                     r['target_name'] = saved_names[r['source_path']]
                     r['target_path'] = str(Path(r['target_path']).parent/r['target_name'])
             current_result['rename_preview'] = refreshed
@@ -1170,6 +1197,8 @@ def run_gui() -> None:
                 from draft_input import merge_reported
                 merge_reported(current_result,current_result.get('reported_durations',{}))
                 items=current_result['rename_preview']['items']
+        apply_content(current_result)
+        items=current_result['rename_preview']['items']
         targets = [item["target_name"].casefold() for item in items]
         apply_choices(current_result)
         duplicates = sorted({name for name in targets if targets.count(name) > 1})
@@ -1203,6 +1232,11 @@ def run_gui() -> None:
     def create_ep(notify: bool = True) -> bool:
         try:
             show_page(1)
+            from missing_media import resolve_dialog, valid_episode_acceptance
+            if any(i.get('episode_name_issue') and (i.get('manual_kind')!='episode-name' or not valid_episode_acceptance(i)) for i in current_result.get('rename_preview',{}).get('items',[])):
+                action,changed=resolve_dialog(root,current_result)
+                if action=='cancel':return False
+                if changed and not refresh_selected_sources():return False
             if not save_edits(notify=False):
                 return False
             root.config(cursor="watch")
@@ -1293,7 +1327,7 @@ def run_gui() -> None:
         if fn_var.get():program['schedule_type']='FN'
         refreshed=create_rename_preview(Path(current_result['source_dir']),Path(current_result['local_dir']),int(current_result['episode']),program)
         for item in refreshed['items']:
-            if item['source_path'] in saved_names and not item.get('manual_kind'):
+            if item['source_path'] in saved_names and not item.get('manual_kind') and not item.get('episode_name_issue'):
                 item['target_name']=saved_names[item['source_path']]
                 item['target_path']=str(Path(item['target_path']).parent/item['target_name'])
         current_result['rename_preview']=refreshed
@@ -1322,7 +1356,7 @@ def run_gui() -> None:
                 refresh_active_blocks()
                 if notice_var.get().strip(): detect_start_block(show_message=False)
             for index,item in enumerate(current_result['rename_preview']['items']):
-                if item['source_path'] in saved_names:
+                if item['source_path'] in saved_names and not item.get('episode_name_issue'):
                     item['target_name']=saved_names[item['source_path']]
                     item['target_path']=str(Path(item['target_path']).parent/item['target_name'])
                     tree.set(str(index),'target',item['target_name'])
@@ -1386,7 +1420,7 @@ def run_gui() -> None:
         if fn_var.get():program['schedule_type']='FN'
         refreshed=create_rename_preview(source_dir,Path(current_result['local_dir']),int(current_result['episode']),program)
         for item in refreshed['items']:
-            if item['source_path'] in saved_names:
+            if item['source_path'] in saved_names and not item.get('episode_name_issue'):
                 item['target_name']=saved_names[item['source_path']]
                 item['target_path']=str(Path(item['target_path']).parent/item['target_name'])
         current_result['rename_preview']=refreshed
@@ -1396,7 +1430,7 @@ def run_gui() -> None:
         if not save_edits(notify=False):return
         rows=[dict(item) for item in current_result['rename_preview']['items']
               if item.get('source_path') and not item.get('draft_duration')
-              and Path(item['source_path']).resolve().parent==source_dir]
+              and (item.get('content_manual') or Path(item['source_path']).resolve().parent==source_dir)]
         if not rows:
             messagebox.showinfo('Chuẩn bị file','Chưa có file nguồn ở thư mục EP để copy.');return
         import threading,queue

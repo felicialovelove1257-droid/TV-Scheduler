@@ -1,6 +1,6 @@
 """Infer a starting occurrence from both programs in an airing notice."""
 import re
-from schedule_engine import show_code
+from schedule_engine import show_code,show_aliases
 
 def infer_start(sentence, program, fn, episode=None):
     text=sentence.upper().strip()
@@ -18,7 +18,7 @@ def infer_start(sentence, program, fn, episode=None):
         code=show_code(show.get('code','')).upper()
         if not code: continue
         if block==6 and block not in active: active.insert(active.index(7),6)
-        for token in (code,show.get('code','').upper(),f"SHOW {show.get('slot',slot)}"):
+        for token in (*show_aliases(show.get('code','')),f"SHOW {show.get('slot',slot)}"):
             aliases.setdefault(token,set()).add(block)
         # Explicit cooking-show title supports the VEGC notice abbreviation.
         title=show.get('code','').casefold()

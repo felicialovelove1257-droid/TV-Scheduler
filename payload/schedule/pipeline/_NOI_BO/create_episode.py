@@ -211,6 +211,11 @@ def create_episode(config_path: Path) -> dict:
     local_dir = Path(config["local_dir"])
     local_dir.mkdir(parents=True, exist_ok=True)
     items = config["rename_preview"]["items"]
+    from missing_media import valid_episode_acceptance
+    pending=[i['source_name'] for i in items if i.get('episode_name_issue') and
+             (i.get('manual_kind')!='episode-name' or not valid_episode_acceptance(i))]
+    if pending:
+        raise ValueError('Cần xác nhận file sai EP trước khi tạo EP: '+ '; '.join(pending))
     if not config.get('schedule_settings',{}).get('tser_fn',True):
         from draft_input import item_key
         items=[i for i in items if item_key(i)!='TSER FN']
@@ -225,6 +230,8 @@ def create_episode(config_path: Path) -> dict:
     replacing=set()
     for item in items:
         old=old_records.get(item['target_name'],{})
+        if item.get('content_manual') and item.get('draft_duration') and (old.get('method')!='reported-duration' or float(old.get('seconds') or 0)!=item['draft_duration']):
+            replacing.add(item['target_name'])
         if source_changed(item, old):
             replacing.add(item['target_name'])
         item.update(source_signature(item))

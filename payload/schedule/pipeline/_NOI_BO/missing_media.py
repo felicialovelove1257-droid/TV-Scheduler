@@ -26,6 +26,44 @@ def source_choices(episode):
     return json.loads(path.read_text('utf-8')) if path.exists() else {'items':[]}
 
 
+def episode_name_issue(row, episode, program):
+    """Only propose recognized current-day content; FN re-air and teasers have own rules."""
+    from episode_scanner import normalize_episode_order, proposed_name
+    if row.get('manual_kind') or row.get('draft_duration'):return None
+    name=row.get('source_name','')
+    normalized=normalize_episode_order(name.replace('_',' '),program)
+    match=re.match(r'^(\d{4})\s+',normalized)
+    if not match or int(match[1])==int(episode):return None
+    if re.search(r'\b(?:TSER|TEASER)\b|\bNWN\s+(?:SEG\s*|S)1\s*B\b',normalized,re.I):return None
+    corrected=str(episode)+normalized[match.end(1):]
+    target,rule=proposed_name(corrected,int(episode),program)
+    if rule in ('review','event-ad') or rule.startswith('teaser'):return None
+    return dict(source_episode=int(match[1]),target_name=target,rule=rule)
+
+
+def set_episode_acceptance(config, row, accepted):
+    data=source_choices(config['episode'])
+    path=row['source_path']
+    data['items']=[r for r in data['items'] if not (r.get('manual_kind')=='episode-name' and r['source_path']==path)]
+    if accepted:
+        proposal=row.get('episode_name_issue')
+        if not proposal:raise ValueError('No recognized EP correction is available.')
+        signature=Path(path).stat()
+        item=dict(row,rule=proposal['rule'],target_name=proposal['target_name'],
+                  target_path=str(Path(config['local_dir'])/proposal['target_name']),
+                  manual_kind='episode-name',accepted_signature=[signature.st_size,signature.st_mtime_ns])
+        data['items'].append(item)
+    atomic_json(choices_path(config['episode']),data)
+
+
+def valid_episode_acceptance(row):
+    if row.get('manual_kind')!='episode-name':return True
+    try:
+        stat=Path(row['source_path']).stat()
+        return row.get('accepted_signature')==[stat.st_size,stat.st_mtime_ns]
+    except OSError:return False
+
+
 def skipped_ads(episode):
     return source_choices(episode).get('skipped_ads',[])
 
@@ -199,6 +237,17 @@ def issues(config, result=None, include_ready=False):
     items=items+selected
     available=[r['target_name'] for r in items if r.get('draft_duration') or Path(r['source_path']).is_file() or Path(r['target_path']).is_file()]
     settings=config.get('schedule_settings',{});out=[]
+    for row in config.get('rename_preview',{}).get('items',[]):
+        proposal=row.get('episode_name_issue')
+        if not proposal:
+            if row.get('rule')=='review' and not include_ready:
+                out.append(dict(kind='qc',name=row.get('source_name',row.get('target_name','')),
+                                detail='Chưa nhận diện được loại file. Kiểm tra tên hoặc chọn loại trong Nội dung EP trước khi tạo.'))
+            continue
+        accepted=row.get('manual_kind')=='episode-name' and valid_episode_acceptance(row)
+        if accepted and not include_ready:continue
+        out.append(dict(kind='episode-name',name=row['source_name'],row=row,ready=accepted,
+                        detail=f"Sai EP: {proposal['source_episode']} → {config['episode']}\n"+proposal['target_name']))
     ads_info=config.get('ads',{})
     if ads_info.get('source_row') is None:
         out.append(dict(kind='qc',name=f"INPUT_3 has no ADS row for EP {config['episode']}.",detail='Update and save INPUT.xlsx, then stop Run all and Scan EP again. The daily ADS list is unavailable; MT fitting may fail.'))
@@ -299,7 +348,18 @@ def resolve_dialog(parent, config, result=None, manage=False):
         labels[idx].configure(text=text,foreground='#168047' if ok else '#b3261e')
     def finish(answer):
         if state['busy']:return
+        if answer!='cancel' and not manage and any(r['kind']=='episode-name' and not r.get('ready') for r in pending):
+            status.set('Cần xác nhận file sai EP hoặc sửa tên rồi kiểm tra lại.')
+            if answer!='retry':return
         state['answer']=answer;window.destroy()
+    def accept_episode(idx,var):
+        try:
+            issue=pending[idx]
+            set_episode_acceptance(config,issue['row'],var.get())
+            issue['ready']=var.get();state['changed']=True
+            row_status(idx,('Đã đồng ý dùng cho EP này' if var.get() else 'Chưa đồng ý dùng')+'\n'+issue['detail'],var.get())
+        except Exception as exc:
+            var.set(False);row_status(idx,str(exc))
     def toggle_skip(idx,mode='today'):
         if state['busy']:return
         issue=pending[idx]
@@ -369,6 +429,11 @@ def resolve_dialog(parent, config, result=None, manage=False):
         label.grid(row=row,column=3,sticky='nw',padx=8,pady=9);labels[i]=label
         if r['kind']!='qc':
             actions=ttk.Frame(table);actions.grid(row=row,column=4,sticky='ne',padx=8,pady=9)
+            if r['kind']=='episode-name':
+                var=tk.BooleanVar(value=ready)
+                button=ttk.Checkbutton(actions,text='Đồng ý dùng cho EP này',variable=var,command=lambda idx=i,v=var:accept_episode(idx,v))
+                button.pack(side='left');button._accept_var=var;controls.append(button)
+                continue
             button=ttk.Button(actions,text='Browse...',command=lambda idx=i:choose(idx));button.pack(side='left');controls.append(button)
             if r['kind'] in ('ad','teaser'):
                 mode=r.get('skipped_mode','')

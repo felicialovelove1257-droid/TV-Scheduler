@@ -101,7 +101,7 @@ def one_ad(rows,pool,target,source):
             if is_intro(ad['path']):continue
             if ad['duration']<=old:continue
             if source=='tail' and ad['cycle']!=anchor['cycle']:continue
-            if anchor['insert_slot']=='inside_show' and ad['duration']>=120:continue
+            if anchor['insert_slot']=='inside_show' and ad['duration']>=120 and ad.get('kind')!='teaser':continue
             if (anchor['cycle'],ad['path'].casefold()) in used:continue
             new_total=base-old+ad['duration'];gap=target-new_total
             score=(abs(gap)>TOLERANCE,abs(gap),bool(occupied),-anchor['cycle'])
