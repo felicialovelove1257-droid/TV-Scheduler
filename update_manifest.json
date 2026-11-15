@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "build": "2026.11.14-104536",
+  "build": "2026.11.15-235823",
   "files": [
     {
       "path": "INPUT.xlsx",
-      "size": 2093669,
-      "sha256": "7131bb57d6ddff0d0fbeb33822468fb1a3a8158bc446190671e54080f4368536"
+      "size": 2093520,
+      "sha256": "919022dbd6fd9b5bce25cabe8ba6b811e30f49cbf49ab88184c26e2dbe6a7f21"
     },
     {
       "path": "SCHEDULER.cmd",
@@ -29,8 +29,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/create_episode.py",
-      "size": 21556,
-      "sha256": "0c655fa5a7dcf2f7fa5a24fef68405ecd96559b7ac62134f212ebc4af6998397"
+      "size": 21702,
+      "sha256": "fe3c54078bd054c28f972118226421bf712c59a9efc4762dcb72fc8baec00529"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/day_end_fit.py",
@@ -69,8 +69,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/ep_content_ui.py",
-      "size": 11386,
-      "sha256": "cead28ddf898ff831644e1711c6849b2ba7d1ca34b88d28fdfce1de5e7c5e909"
+      "size": 11458,
+      "sha256": "c2ce2f18b2b02d5a12c1197a7d1fb0de95430261bc1000a0b7939d668805165a"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/episode_date.py",
@@ -79,8 +79,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/episode_scanner.py",
-      "size": 90853,
-      "sha256": "b2781c7c6434f838a0d6f83df00a390c7e815ebff35bd9135dd81503a115d7cb"
+      "size": 93508,
+      "sha256": "76d07f2e7057f17a562336ebdaa7c009c6e0ebf29e5d6a1df6037917647154b3"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/event_ads.py",
@@ -89,13 +89,13 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/external_qc.py",
-      "size": 69459,
-      "sha256": "8c236d82d3f21971c0f6a7d6f45e9d4b55e353d95da81508645d50cd5b13a3f2"
+      "size": 69551,
+      "sha256": "f86784f98a1c5ecd21d7f00afc035359991c34edc2ea02946ab87b78c49c8b82"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/fn_rules.py",
-      "size": 3128,
-      "sha256": "d910f983b41a9820d00921aa68898e84a38b5007f654f089cb80df06937c4764"
+      "size": 3640,
+      "sha256": "60367c0d0e2e01e729071386980873f6e8d036adf0ebe3e56753876de6c36686"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/import_sources.py",
@@ -114,8 +114,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/missing_media.py",
-      "size": 26631,
-      "sha256": "e40ced9fc4b3d45a9e0f693b089b82d77e89ed68e45270a0f6713695a684313d"
+      "size": 26737,
+      "sha256": "ea28d3b94b06734579870cfbd40c55523b402308a66c06983e9763ccf9815f18"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/mt_local.py",
@@ -126,6 +126,16 @@
       "path": "schedule/pipeline/_NOI_BO/mt_shift.py",
       "size": 2069,
       "sha256": "072899eab0a691bffb2a60704ea73ea5763d58acf9dcdea5e54b7e092b7257a8"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/pip_help.py",
+      "size": 19982,
+      "sha256": "4c84ece382dfd218c91ba5122a8a630ed8bd0b32c38db651e16557549cf51f75"
+    },
+    {
+      "path": "schedule/pipeline/_NOI_BO/pip_help_vi.py",
+      "size": 15048,
+      "sha256": "29b37d06486260cf9f9cbf2f79558ab1f6656a6bbca94eb9299ae3aac0787ae2"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/pip_update_ui.py",
@@ -139,8 +149,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/pipeline_flow.py",
-      "size": 43119,
-      "sha256": "fc496cdf68eccf328758fa81f81e0e1376763a135ea0ed3aaeb7778588a40fed"
+      "size": 44554,
+      "sha256": "ad3a2f3e9cf21e1d2054a091977a81bc06988c416e22b71a2fbaf44a48c43faa"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/portable_paths.py",
@@ -159,8 +169,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/qc_report.py",
-      "size": 19550,
-      "sha256": "47f2e5a133e8c8fb62129d915375d862e0a5f002b555da3ee74bc4cb2565c3b6"
+      "size": 20487,
+      "sha256": "8bcdfba20f1e6553f43b32b6f7a430279e8304cbeb726f21fe9517d780955c8c"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/qc_translations_en.py",
@@ -229,8 +239,8 @@
     },
     {
       "path": "schedule/pipeline/_NOI_BO/english_translations.json",
-      "size": 83087,
-      "sha256": "a0febf6fb2cda40de3bc5fa2c6b5d07e5bde03a00dc83499e0e8ffe2e5dc0dc4"
+      "size": 87140,
+      "sha256": "c50d134d6d48b370585dcc94d30834572968287952cbc826fcbfa78c890e9c64"
     },
     {
       "path": "schedule/pipeline/_NOI_BO/runtime_env.cmd",

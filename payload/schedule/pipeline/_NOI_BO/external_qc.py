@@ -803,6 +803,8 @@ def show_dialog(parent,default_ep='',notice_provider=None):
     window=tk.Toplevel(parent);window.title('QC lịch ngoài — kiểm tra quy tắc');window.geometry('1150x780')
     bar=ttk.Frame(window,padding=12);bar.pack(fill='x')
     check_actions=ttk.Frame(bar);check_actions.pack(side='right',padx=(12,0))
+    from pip_help import help_button
+    help_button(check_actions,'external',side='right')
     ttk.Label(bar,text='EP').pack(side='left');ep=tk.StringVar(value=str(default_ep));ttk.Entry(bar,textvariable=ep,width=8).pack(side='left',padx=8)
     selected=tk.StringVar();ttk.Entry(bar,textvariable=selected).pack(side='left',fill='x',expand=True,padx=6)
     def browse():

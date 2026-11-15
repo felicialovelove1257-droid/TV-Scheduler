@@ -51,14 +51,16 @@ def shorten_program_title(text: str) -> str:
     return re.sub(r"\s+", " ", title).strip()
 
 
-def shorten_show_title(text: str) -> str:
+def shorten_show_title(text: str, code: str = '') -> str:
     title=shorten_program_title(text)
     # For a named person followed by a subtitle, retain the person and part.
     person=re.match(r'^(.*?\(vegan\))\s*-\s*',title,re.I)
     if person:
         part=re.search(r'\bP\d+(?:o\d+)?\b',title,re.I)
         return person[1]+(' '+part[0] if part else '')
-    return title
+    parts=re.findall(r'\bP\d+(?:o\d+)?\b',title,re.I)
+    words=re.sub(r'\bP\d+(?:o\d+)?\b','',title,flags=re.I).split()
+    return ' '.join(words[:5]).strip(' -')+(' '+' '.join(dict.fromkeys(parts)) if parts else '')
 
 
 def clean_local_filename(name: str) -> str:
@@ -142,7 +144,7 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
         no_max = " (No Max)" if "NO MAX" in upper else ""
         return f"{episode} BMD IN{kind}{no_max}{ext}", "bmd-intro"
     if "BMD MAIN" in upper:
-        title = shorten_program_title(program.get("details", {}).get("BMD", "BMD"))
+        title = shorten_show_title(program.get("details", {}).get("BMD", "BMD"))
         return f"{episode} BMD MAIN {title} (weblink){ext}", "bmd-main"
     if "BMD OUTRO" in upper:
         if is_no_next(upper):
@@ -157,7 +159,7 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
         no_max = " (No Max)" if "NO MAX" in upper else ""
         return f"{episode} WOW IN{no_max}{ext}", "wow-lecture-intro"
     if "WOW MAIN" in upper:
-        title = shorten_program_title(program.get("details", {}).get("WOW", "WOW"))
+        title = shorten_show_title(program.get("details", {}).get("WOW", "WOW"))
         if program.get('wow_has_intro_outro') is False:
             return f"{episode} WOW {title}{ext}", 'wow-main'
         # The sheet title already contains the part number; keep only one copy.
@@ -167,7 +169,7 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
         if 'NO MAX' in upper: suffix += ' (No Max)'
         return f"{episode} WOW OUT{suffix}{ext}", "wow-lecture-outro"
     if re.match(rf'^{episode}\s+WOW\b',upper) and program.get('wow_has_intro_outro') is False:
-        title=shorten_program_title(program.get('details',{}).get('WOW','WOW'))
+        title=shorten_show_title(program.get('details',{}).get('WOW','WOW'))
         return f'{episode} WOW {title}{ext}', 'wow-main'
 
     active_codes = [show_code(item.get("code", "")).upper() for item in program.get("active_shows", [])]
@@ -177,7 +179,7 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
         if short_code and re.search(rf"(?<![A-Z0-9])(?:{alias_pattern})(?![A-Z0-9])", upper) and not re.search(r"\b(?:TSER|TEASER)\b",upper):
             segment=re.search(r'\b(?:SEG(?:MENT)?\s*|S)([12])\b',upper)
             show=next((v for v in program.get('active_shows',[]) if show_code(v.get('code','')).upper()==code),{})
-            title=shorten_show_title(show.get('title',''))
+            title=shorten_show_title(show.get('title',''),short_code)
             from show_formats import show_part
             role=show_part(stem,short_code)
             if role in ('IN','OUT') or (role=='MAIN' and show.get('has_intro_outro')):
@@ -185,7 +187,7 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
                 if is_no_next(stem):suffix+=' (No NXT)'
                 fallback=re.sub(rf'^\d+\s+{re.escape(short_code)}\s*(?:MAIN\s*)?','',stem,flags=re.I)
                 fallback=re.sub(r'\s*\(?no[ _]*(?:smtv[ _]*)?max\)?|\s+v\d+\b','',fallback,flags=re.I).strip()
-                label=(title or fallback or 'MAIN') if role=='MAIN' else role
+                label=(title or shorten_show_title(fallback) or 'MAIN') if role=='MAIN' else role
                 return f"{episode} {short_code} {label}{suffix}{ext}",'show-'+{'IN':'intro','MAIN':'main','OUT':'outro'}[role]
 
             if segment and title and not re.search(r'\b(?:TSER|TEASER)\b',upper):
@@ -196,6 +198,13 @@ def _proposed_name(source_name: str, episode: int, program: dict) -> tuple[str, 
             remainder = re.sub(rf"^(?:{alias_pattern})(?=\s|$)",short_code,remainder,flags=re.I)
             remainder = re.sub(r"\s+V\d+(?=\s|$)", "", remainder, flags=re.I)
             remainder = re.sub(r"\s+", " ", remainder).strip()
+            content=re.sub(r'^'+re.escape(short_code)+r'\s*','',remainder,flags=re.I)
+            suffix=' (No Max)' if 'NO MAX' in upper else ' (Max)' if re.search(r'\bMAX\b',upper) else ''
+            if is_no_next(upper):suffix+=' (No NXT)'
+            segments=re.findall(r'\b(?:SEG(?:MENT)?\s*|S)(\d+)\b',content,re.I)
+            content=re.sub(r'\b(?:SEG(?:MENT)?\s*|S)\d+\b|\(?(?:No )?Max\)?|\(?No NXT\)?','',content,flags=re.I)
+            remainder=short_code+' '+(title or shorten_show_title(content,short_code))
+            remainder+=''.join(' S'+s for s in dict.fromkeys(segments))+suffix
             return f"{episode} {remainder}{ext}", "active-show"
 
     if upper == "TEASER FN":
@@ -241,13 +250,13 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         if has_fn(source):
             prefix=re.match(r'(\d{4})\b',normalize_episode_order(source.name, program))
             if prefix:source_episode=int(prefix[1])
-        target_name, rule = proposed_name(source.name, source_episode, program)
+        target_name, rule = proposed_name(source.name, episode, program)
         rows.append({
             "rule": rule,
             "source_name": source.name,
             "target_name": target_name,
             "source_path": str(source),
-            "target_path": str((local_dir.parent / f'EP {source_episode}' if source_episode != episode else local_dir) / target_name),
+            "target_path": str(local_dir / target_name),
         })
     from missing_media import source_choices, episode_name_issue, valid_episode_acceptance
     for row in rows:
@@ -269,8 +278,12 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
     manual_fn=[r for r in manual if r.get('manual_kind')=='fn'] if fn_enabled else []
     if manual_fn:
         rows=[r for r in rows if not has_fn(Path(r['source_name']))]
-        fn_source_episode=int(re.match(r'(\d{4})',manual_fn[0]['target_name'])[1])
+        from fn_rules import identity as fn_identity
+        fn_source_episode=fn_identity(manual_fn[0]['source_name'])[0][0]
     for choice in manual:
+        if choice.get('manual_kind')=='fn':
+            from fn_rules import current_episode_rows
+            current_episode_rows([choice],episode,local_dir)
         if choice.get('manual_kind')=='fn' and not fn_enabled:continue
         if choice.get('manual_kind')=='episode-name':
             rows=[r for r in rows if r['source_path']!=choice['source_path']]
@@ -334,7 +347,7 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         if has_fn(source):
             prefix=re.match(r'(\d{4})\b',normalize_episode_order(source.name, program))
             if prefix:local_ep=int(prefix[1])
-        target_name,rule=proposed_name(source.name,local_ep,program)
+        target_name,rule=proposed_name(source.name,episode,program)
         if rule=='event-ad':continue  # Event campaigns must be present in the EP source folder.
         if source_fn_teaser and is_fn_teaser(target_name):continue
         candidate=dict(rule=rule,source_name=source.name,target_name=target_name,source_path=str(source),target_path=str(local_dir/target_name),local_fallback=True)
@@ -347,6 +360,8 @@ def create_rename_preview(source_dir: Path, local_dir: Path, episode: int, progr
         if key and (key not in occupied or (rule=='ap-part' and key not in source_ap_keys)):
             rows.append(candidate);occupied.add(key)
     rows=latest_part_rows(rows)
+    from fn_rules import current_episode_rows
+    current_episode_rows(rows,episode,local_dir)
     preview_dir = BASE_DIR / "previews"
     preview_dir.mkdir(parents=True, exist_ok=True)
     preview_path = preview_dir / f"EP_{episode}_rename_preview.csv"
@@ -696,6 +711,7 @@ def summary(result: dict) -> str:
 def run_gui() -> None:
     import tkinter as tk
     from tkinter import messagebox, ttk
+    from pip_help import help_button, show_help
 
     root = tk.Tk()
     from app_version import APP_TITLE
@@ -725,6 +741,7 @@ def run_gui() -> None:
     flow_footer.pack(side='bottom',fill='x')
     from ui_language import add_selector
     add_selector(flow_footer)
+    ttk.Button(flow_footer,text='ⓘ User Guide',command=lambda: show_help(root)).pack(fill='x',pady=(4,8))
     ttk.Separator(flow_footer).pack(fill='x',pady=(0,8))
     ttk.Button(flow_footer,text='Thứ tự xử lý PIP',command=lambda: show_flow(root)).pack(fill='x')
     ttk.Label(flow_footer,text='Xem các ưu tiên đang áp dụng',wraplength=170,foreground='#666666').pack(anchor='w',pady=(5,0))
@@ -890,6 +907,8 @@ def run_gui() -> None:
 
     # Step 3 is reserved exclusively for the Cycle 1 schedule.
     cycle1_page = pages[2]
+    cycle_help=ttk.Frame(cycle1_page);cycle_help.pack(fill='x')
+    help_button(cycle_help,'cycles',side='right')
     ttk.Label(cycle1_page, text="Danh sách tại đây chỉ dành cho Cycle 1.").pack(anchor="w", pady=(0, 8))
     from schedule_table_colors import add_legend, configure_tree, build_context, row_style
     add_legend(cycle1_page)
@@ -905,6 +924,8 @@ def run_gui() -> None:
     for index, text in ((3, "Các cycle sẽ được tạo từ Cycle 1 và rule Excel."), (4, "File M3U sẽ được xuất ở bước này."), (5, "Kết quả kiểm tra lịch — xem mốc MT, cuối ngày và các mục cần xử lý.")):
         ttk.Label(pages[index], text=text, font=("Segoe UI", 11)).pack(anchor="w")
     schedule_result = {}
+    all_help=ttk.Frame(pages[3]);all_help.pack(fill='x')
+    help_button(all_help,'cycles',side='right')
     add_legend(pages[3])
     all_cycles_frame = ttk.Frame(pages[3])
     all_cycles_frame.pack(fill='both', expand=True)
@@ -919,6 +940,8 @@ def run_gui() -> None:
     export_status = tk.StringVar(value='Chưa tạo lịch.')
     ttk.Label(pages[4],textvariable=export_status,wraplength=850).pack(anchor='w',pady=10)
     ttk.Button(pages[4],text='Mở thư mục kết quả',command=lambda: os.startfile(str(Path(schedule_result['m3u_path']).parent)) if schedule_result else None).pack(anchor='w')
+    qc_help=ttk.Frame(pages[5]);qc_help.pack(fill='x')
+    help_button(qc_help,'qc',side='right')
     qc_sections=ttk.Frame(pages[5])
     qc_sections.pack(fill='both',expand=True,pady=(8,0))
     qc_sections.columnconfigure(0,weight=1)
@@ -969,6 +992,13 @@ def run_gui() -> None:
         widget.configure(state='normal');widget.delete('1.0','end')
         table=None;ads_table=None
         for line in report.splitlines():
+            if widget is qc_text and re.match(r'^[✓✗] \[',line) and ': cycle ' in line:
+                head,tokens=line.rsplit(': cycle ',1)
+                widget.insert('end',head+': cycle ','pass' if line.startswith('✓') else 'warning')
+                for token in re.split(r'(✓ \d+|✗ \d+)',tokens):
+                    widget.insert('end',token,'pass' if token.startswith('✓') else 'warning' if token.startswith('✗') else '')
+                widget.insert('end','\n')
+                continue
             ads_match=re.match(r'^([✓✗]) (.*?) — ADS: (\d+) cycle; (\d+) lần; cycle (.*?)\.$',line)
             if widget is qc_text and ads_match:
                 if ads_table is None:
@@ -1172,6 +1202,8 @@ def run_gui() -> None:
         from ep_content import apply as apply_content
         apply_content(current_result)
         items = current_result["rename_preview"]["items"]
+        from fn_rules import current_episode_rows
+        current_episode_rows(items,current_result['episode'],current_result['local_dir'])
         current_result["schedule_settings"] = {
             "fn": fn_var.get(),
                 "tser_fn": tser_fn_var.get(),
@@ -1430,7 +1462,7 @@ def run_gui() -> None:
         if not save_edits(notify=False):return
         rows=[dict(item) for item in current_result['rename_preview']['items']
               if item.get('source_path') and not item.get('draft_duration')
-              and (item.get('content_manual') or Path(item['source_path']).resolve().parent==source_dir)]
+              and (item.get('content_manual') or item.get('rule')=='nwn-s1b-fn' or Path(item['source_path']).resolve().parent==source_dir)]
         if not rows:
             messagebox.showinfo('Chuẩn bị file','Chưa có file nguồn ở thư mục EP để copy.');return
         import threading,queue
@@ -1494,6 +1526,7 @@ def run_gui() -> None:
     update_prepare_button.pack(side='left',padx=(8,0))
     stop_prepare_button=tk.Button(run_header,text='■ DỪNG CHUẨN BỊ',command=stop_preparing,state='disabled',fg='#A42121',padx=10,pady=10)
     stop_prepare_button.pack(side='left',padx=(8,0))
+    help_button(run_header,'prepare')
     def update_pip():
         if str(run_button.cget('state'))=='disabled' or str(stop_prepare_button.cget('state'))=='normal':
             messagebox.showinfo('Update PIP','Finish the current operation before updating PIP.')
@@ -1501,6 +1534,7 @@ def run_gui() -> None:
         from pip_update_ui import show_update
         show_update(root)
     ttk.Button(run_header,text='Update PIP',command=update_pip).pack(side='left',padx=(16,0))
+    help_button(run_header,'update')
     def check_external_schedule():
         from external_qc import show_dialog
         def external_notice(ep):
@@ -1516,10 +1550,12 @@ def run_gui() -> None:
                            activebackground='#125438', activeforeground='white',
                            relief='flat', padx=20, pady=9, cursor='hand2')
     run_button.pack(side='left')
+    help_button(run_buttons,'run')
     ttk.Label(run_panel, text='Quét EP → Tạo EP → Tạo lịch → QC', font=('Segoe UI', 9)).pack(pady=(4, 0))
     ttk.Button(command_bar, text="Scan EP", command=do_scan).pack(side="left")
     ttk.Button(command_bar, text="Tạo EP", command=create_ep).pack(side="left", padx=(6, 0))
     ttk.Button(command_bar, text="Tạo lịch", command=create_schedule).pack(side="left", padx=(6, 0))
+    help_button(command_bar,'settings')
     def manage_media_choices():
         if str(current_result.get('episode',''))!=episode_var.get().strip():
             if not do_scan():return
@@ -1533,10 +1569,13 @@ def run_gui() -> None:
                 build_status.set('Đã lưu lựa chọn file / Skip cho EP này. Chạy tất cả để áp dụng.')
         except Exception as exc:
             messagebox.showerror('Chọn lại file / Skip',str(exc))
-    media_choices_button=tk.Button(sidebar,text='Files / Skip',command=manage_media_choices,
+    media_choices_group=ttk.Frame(sidebar)
+    media_choices_group.pack(before=steps,fill='x',pady=(0,10))
+    help_button(media_choices_group,'files',side='right')
+    media_choices_button=tk.Button(media_choices_group,text='Files / Skip',command=manage_media_choices,
                                    bg='#FFD54F',fg='#202020',activebackground='#FFC107',
                                    font=('Segoe UI',10,'bold'),relief='flat',pady=8,cursor='hand2')
-    media_choices_button.pack(before=steps,fill='x',pady=(0,10))
+    media_choices_button.pack(side='left',fill='x',expand=True)
     ttk.Button(notice_bar, text="Nhận diện", command=detect_start_block).pack(side="right")
     aux_buttons = ttk.Frame(scan_page)
     aux_buttons.grid(row=3, column=0, columnspan=4, sticky="e", pady=(8, 0))
@@ -1591,6 +1630,7 @@ def run_gui() -> None:
             build_status.set('Đã đọc và lưu thông tin. Bấm Chạy tất cả để tiếp tục.')
         except Exception as exc:messagebox.showerror('Thông tin tổng',str(exc))
     ttk.Button(bulk_buttons,text='Đọc và lưu thông tin',command=save_bulk_input).pack(side='right',padx=6)
+    help_button(bulk_buttons,'input')
     ttk.Button(bulk_buttons,text='▶ Chạy tất cả',command=run_all).pack(side='right',padx=6)
     def close_pipeline():
         save_checkboxes();persist_bulk();root.destroy()
@@ -1604,6 +1644,7 @@ def run_gui() -> None:
         command=lambda: os.startfile(preview_var.get()) if preview_var.get() else None,
     ).pack(side="left")
     ttk.Button(aux_buttons, text="Lưu tên đã sửa", command=save_edits).pack(side="left", padx=(8, 0))
+    help_button(aux_buttons,'names')
     tree.bind("<Double-1>", edit_target)
     tree.bind('<Button-1>',toggle_max)
     entry.bind("<Return>", lambda _event: do_scan())

@@ -149,6 +149,8 @@ def open_editor(root,config):
             rows[:]=updated;refresh()
         window.grab_set()
     buttons=ttk.Frame(window,padding=10);buttons.pack(fill='x')
+    from pip_help import help_button
+    help_button(buttons,'content')
     for label,command in [('＋ Thêm mục / part',lambda:edit(True)),('Mở / Khóa',toggle),('Sửa',edit),('Khôi phục mặc định',restore),('Xóa mục thêm',remove)]:
         ttk.Button(buttons,text=label,command=command).pack(side='left',padx=3)
     ttk.Button(buttons,text='Lưu theo EP',command=finish).pack(side='right',padx=3)

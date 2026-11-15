@@ -165,7 +165,7 @@ def select_fn(config, selected):
     rows=[]
     for path in paths:
         source_duration(path)  # Validate every member before saving the selection.
-        target,rule=proposed_name(path.name,episode,config['program'])
+        target,rule=proposed_name(path.name,config['episode'],config['program'])
         rows.append(dict(rule=rule,source_name=path.name,source_path=str(path),target_name=target,
                          target_path=str(Path(config['local_dir'])/target),manual_kind='fn'))
     data=source_choices(config['episode'])
@@ -317,7 +317,7 @@ def issues(config, result=None, include_ready=False):
     for r in out:
         k=(r['kind'],r['name'])
         if k not in seen:seen.add(k);return_rows.append(r)
-    return [r for r in return_rows if not include_ready or r['kind']!='qc']
+    return [r for r in return_rows if (r['kind']!='qc' if include_ready else not r.get('skipped'))]
 
 
 def resolve_dialog(parent, config, result=None, manage=False):
@@ -343,6 +343,8 @@ def resolve_dialog(parent, config, result=None, manage=False):
         ttk.Label(table,text=label,font=('Segoe UI',10,'bold')).grid(row=0,column=col,sticky='w',padx=8,pady=8)
     status=tk.StringVar();ttk.Label(window,textvariable=status,wraplength=1040).pack(fill='x',padx=12,pady=8)
     buttons=ttk.Frame(window);buttons.pack(fill='x',padx=12,pady=10)
+    from pip_help import help_button
+    help_button(buttons,'files')
     state={'answer':'cancel','changed':False,'busy':False};messages=queue.Queue();controls=[];labels={}
     def row_status(idx,text,ok=False):
         labels[idx].configure(text=text,foreground='#168047' if ok else '#b3261e')

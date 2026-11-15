@@ -53,11 +53,22 @@ def expected_sources(episode,program,export_root,local_root):
     from missing_media import source_choices
     manual=[r for r in source_choices(episode)['items'] if r.get('manual_kind')=='fn'
             and (Path(r['source_path']).is_file() or Path(r['target_path']).is_file())]
-    if manual:return {r['target_name'].casefold() for r in manual}
+    if manual:return {proposed_name(r['target_name'],episode,program)[0].casefold() for r in manual}
     paths=[]
     for folder in (export_root/f'EP {episode}',export_root/f'EP {episode-1}',export_root/'@ ARCHIVES'/f'EP {episode-1}'):
         paths=[p for p in folder.glob('*.mp4') if identity(p.name)]
         if paths:break
     # Scanner also accepts existing local FN when no source counterpart exists.
     paths+= [p for p in (local_root/f'EP {episode}').glob('*.mp4') if identity(p.name)]
-    return {proposed_name(p.name,identity(p.name)[0][0],program)[0].casefold() for p in paths}
+    return {proposed_name(p.name,episode,program)[0].casefold() for p in paths}
+
+
+def current_episode_rows(items,episode,local_dir):
+    """Keep source identity while all selected FN temps belong to the airing EP."""
+    for row in items:
+        source=identity(row.get('source_name',''))
+        if not identity(row.get('target_name','')):continue
+        if source:row['fn_source_episode']=source[0][0]
+        row['target_name']=re.sub(r'^\d{4}(?=\s)',str(episode),row['target_name'])
+        row['target_path']=str(Path(local_dir)/row['target_name'])
+    return items

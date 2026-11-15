@@ -202,6 +202,8 @@ def source_changed(item: dict, old: dict) -> bool:
 
 def create_episode(config_path: Path) -> dict:
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    from fn_rules import current_episode_rows
+    current_episode_rows(config['rename_preview']['items'],config['episode'],config['local_dir'])
     from draft_input import expand_bmd_out
     expand_bmd_out(config)
     from max_options import apply_choices

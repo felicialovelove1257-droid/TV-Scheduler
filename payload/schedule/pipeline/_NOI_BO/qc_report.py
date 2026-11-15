@@ -9,27 +9,30 @@ def ads_usage_report(config, rows, assets):
     from pathlib import Path
     entries={}
     def identity(path):return str(path).replace('\\','/').casefold()
-    def add(name,path=None):
+    rank={'DO_NOT_SKIP':0,'PRIORITY':1}
+    def add(name,path=None,priority='OPTIONAL'):
         key=identity(path) if path else 'unresolved:'+name.casefold()
-        if key not in entries:entries[key]={'name':Path(path).name if path else name,'sheet_name':name,'path':str(path) if path else '', 'cycles':set(),'plays':0}
+        if key not in entries:entries[key]={'name':name,'sheet_name':name,'path':str(path) if path else '', 'cycles':set(),'plays':0,'priority':priority}
+        elif rank.get(priority,2)<rank.get(entries[key]['priority'],2):entries[key]['priority']=priority
         return entries[key]
     for item in config.get('ads',{}).get('items',[]):
         if re.search(r'Daily News Scroll',item['name'],re.I):continue
-        add(item['name'],assets.resolve(item['name']))
+        add(item['name'],assets.resolve(item['name']),item.get('priority_class','OPTIONAL'))
     for label,rule in config.get('cycle_rules',{}).items():
         if re.search(r'Abortion|Hygiene|M QY Warn',label,re.I) and re.search(r'\d',str(rule)):
             add(label,assets.resolve(label))
     for row in rows:
         if row.get('kind') not in ('PRIORITY','DO_NOT_SKIP','optional','fixed','intro'):continue
         if re.match(r'^M intro\b',row['name'],re.I):continue
-        item=add(row['name'],row['path'])
+        item=add(row['name'],row['path'],row.get('kind','OPTIONAL'))
         item['cycles'].add(row['cycle']);item['plays']+=1
     result=[]
     for item in entries.values():
         item['cycles']=sorted(item['cycles']);item['cycle_count']=len(item['cycles'])
-        item['color']='green' if item['cycle_count']>3 else 'red'
+        item['cycle_status']=[dict(cycle=c,present=c in item['cycles']) for c in sorted({r['cycle'] for r in rows})]
+        item['color']='green' if item['cycle_count']>=3 else 'red'
         result.append(item)
-    return sorted(result,key=lambda x:(x['cycle_count']>3,x['name'].casefold()))
+    return sorted(result,key=lambda x:(rank.get(x['priority'],2),x['color']!='green',x['name'].casefold()))
 
 
 def next_show_summary(full_rows, kept_rows):
@@ -133,8 +136,17 @@ def render_qc(result):
     if end.get('extension_unavailable'):
         lines.append('Không thể nối show: các cycle đã dựng không có show tiếp theo.')
     for error in end.get('extension_errors',[]):lines.append('Không thể nối show: '+error)
-    lines += ['', '3. CÁC MỤC CẦN XỬ LÝ']
+    lines += ['', '3. ADS TRONG NGÀY — DO NOT SKIP / ƯU TIÊN', 'Mỗi cycle: ✓ có; ✗ không có. ADS thường dùng từ 3 cycle: xanh; dưới 3: đỏ.']
+    for item in result.get('ads_usage',[]):
+        category={'DO_NOT_SKIP':'DO NOT SKIP','PRIORITY':'ƯU TIÊN'}.get(item.get('priority'),'ADS thường')
+        tokens=', '.join(('✓ ' if s['present'] else '✗ ')+str(s['cycle']) for s in item.get('cycle_status',[]))
+        if not tokens:tokens=', '.join('✓ '+str(c) for c in item['cycles']) or '—'
+        lines.append(('✓ ' if item['cycle_count']>=3 else '✗ ')+f"[{category}] {item['name']}: cycle {tokens}")
+    if not result.get('ads_usage'):lines.append('⚠ Không có dữ liệu ADS của ngày để đối chiếu.')
+    lines += ['', '4. CÁC MỤC CẦN XỬ LÝ']
     issues=[s for s in result.get('missing',[]) if not s.startswith(('Chưa đạt 20:00','Cuối ngày chưa vào khoảng'))]
+    covered={str(i.get('priority'))+': '+i.get('sheet_name',i['name']) for i in result.get('ads_usage',[]) if i.get('priority') in ('PRIORITY','DO_NOT_SKIP')}
+    issues=[s for s in issues if s not in covered]
     for s in issues:
         s=s.replace('source/path','file nguồn hoặc đường dẫn').replace('Slot bị trùng','Hai mục chèn đang nằm sát nhau')
         if s == 'NWN Daily Scroll':
@@ -143,7 +155,7 @@ def render_qc(result):
     if not issues: lines.append('✓ Các kiểm tra còn lại không báo lỗi.')
     conflicts=result.get('insertion_conflict_count',0)
     lines.append('✓ Mỗi chỗ chèn chỉ có một mục.' if not conflicts else f'✗ Có {conflicts} chỗ chèn hai mục sát nhau.')
-    lines += ['', '4. ĐIỀU CHỈNH ĐÃ THỰC HIỆN']
+    lines += ['', '5. ĐIỀU CHỈNH ĐÃ THỰC HIỆN']
     changes=[]
     for change in timing.get('max_changes',[])+end.get('max_changes',[]):
         changes.append(f"Cycle {change['cycle']}: {change['before']} → {change['after']} (+{change['added_seconds']:.3f} giây).")
@@ -171,11 +183,7 @@ def render_qc(result):
         changes.append(f"Cycle {move['cycle']}: giãn teaser {move['teaser']} từ block {move['from_block']} sang {move['to_block']}, đổi chỗ với {move['ad']}.")
     lines.extend('• '+s for s in changes)
     if not changes: lines.append('Chưa có điều chỉnh bổ sung.')
-    lines += ['', '5. FILE KẾT QUẢ', result.get('m3u_path','Chưa xuất M3U.')]
-    lines += ['', '6. ADS SỬ DỤNG TRONG NGÀY', 'Xanh: hơn 3 cycle; đỏ: 0–3 cycle. Màu thể hiện mức sử dụng.']
-    for item in result.get('ads_usage',[]):
-        cycles=', '.join(map(str,item['cycles'])) or 'Không dùng'
-        lines.append(f"{'✓' if item['cycle_count']>3 else '✗'} {item['name']} — ADS: {item['cycle_count']} cycle; {item['plays']} lần; cycle {cycles}.")
+    lines += ['', '6. FILE KẾT QUẢ', result.get('m3u_path','Chưa xuất M3U.')]
     return '\n'.join(lines)+'\n'
 
 
