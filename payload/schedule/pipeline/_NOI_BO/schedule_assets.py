@@ -54,8 +54,10 @@ class Assets:
                 self.mapping.setdefault(key(name), set()).add(p)
         # Explicitly confirmed names supplement the editable catalog across episodes.
         approved_path = BASE / 'approved_ads.json'
+        approved_records=[]
         if approved_path.exists():
-            for item in json.loads(approved_path.read_text('utf-8')).get('items', []):
+            approved_records=json.loads(approved_path.read_text('utf-8')).get('items', [])
+            for item in approved_records:
                 if item.get('user_selected'):
                     self.mapping[key(item['name'])]={local_path(item['path'])}
                 else:
@@ -66,6 +68,8 @@ class Assets:
         for name,path in self.ad_profile.get('aliases',{}).items():
             self.mapping.setdefault(key(name),{local_path(path)})
 
+        from ad_groups import attach
+        attach(self,approved_records)
         from missing_media import skipped_ads,one_time_skipped_ads
         names=skipped_ads(config['episode'])+one_time_skipped_ads(config['episode'])
         self.skipped_names={filename_key(n) for n in names}
@@ -88,7 +92,7 @@ class Assets:
         k = key(name)
         paths = self.mapping.get(k)
         if paths is not None:
-            return next(iter(paths)) if len(paths) == 1 and next(iter(paths)).is_file() else None
+            return next(iter(paths)) if len(paths) == 1 and self.available(next(iter(paths))) else None
         k = key(aliases.get(k, name))
         hits = [p for p in self.files if key(p.name) == k]
         local_hits = [p for p in hits if p.parent == self.local]
@@ -99,13 +103,24 @@ class Assets:
         mapped=[paths for alias,paths in self.mapping.items() if filename_key(alias)==normalized]
         if mapped:
             paths=set().union(*mapped)
-            return next(iter(paths)) if len(paths)==1 and next(iter(paths)).is_file() else None
+            return next(iter(paths)) if len(paths)==1 and self.available(next(iter(paths))) else None
         hits=[p for p in self.files if filename_key(p.name)==normalized
               and not re.search(r'need[ _]*fix|do[ _]*not[ _]*air|not[ _]*air',str(p),re.I)]
         # Multiple versions or folders remain a user choice, never a guess.
         return hits[0] if len(hits)==1 else None
 
+    def available(self,path):
+        from ad_groups import identity,valid
+        group=self.groups.get(identity(path))
+        if not group and identity(path) in self.group_members:return False
+        return Path(path).is_file() and (not group or valid(group))
+
     def duration(self, path):
+        from ad_groups import identity,valid
+        group=self.groups.get(identity(path))
+        if group:
+            if not valid(group):raise ValueError('ADS group missing/changed file: '+group['name'])
+            return sum(p['seconds'] for p in group['parts'])
         path = Path(path)
         stat = path.stat()
         signature = [stat.st_size, stat.st_mtime_ns]

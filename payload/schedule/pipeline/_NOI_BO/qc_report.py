@@ -303,8 +303,23 @@ def reported_items_panel(parent, caption, items):
     return frame
 
 
-def combine_temporary_notices(reported_items, rows, missing):
+def combine_temporary_notices(reported_items, rows, missing, source_items=()):
+    import re
+    from pathlib import Path
     items={item['name']:dict(item) for item in reported_items}
+    used={row['name']:row for row in rows}
+    for source in source_items:
+        name=source.get('target_name','')
+        original=Path(source.get('source_name','').replace('\\','/')).stem
+        if source.get('local_fallback') and source.get('target_path'):
+            marker=Path(source['target_path']).with_suffix('.mp4.source-temp.json')
+            if marker.is_file():
+                import json
+                try:original=json.loads(marker.read_text('utf-8')).get('source_name',original)
+                except (ValueError,OSError):pass
+        if name in used and re.search(r'\bDN[ _-]+TEMP\b',original,re.I):
+            items[name]={'name':name,'seconds':used[name]['duration'],
+                         'note':'Daily Scroll đang dùng DN TEMP — cần thay bằng bản chính thức'}
     for row in rows:
         if row.get('draft_no_next'):
             items[row['name']]={'name':row['name'],'seconds':row['duration'],

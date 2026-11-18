@@ -6,6 +6,7 @@ import json
 from pip_help_vi import DATA
 VI_DATA=dict(DATA)
 VI_UI=VI_DATA.pop('_ui')
+VI_DATA={'quick':VI_DATA['quick'], **VI_DATA}
 EN_UI={'title':'PIP User Guide','hint':'Choose a topic. Help does not change your EP or settings.',
        'search':'Search topics','close':'Close','subtitle':'English · Daily scheduling, media preparation and QC'}
 
@@ -14,6 +15,9 @@ TOPICS = {
   ('1. Copy the starting-show notice', 'Open step 0: Enter information. Copy and paste the full “Next day will air…” notice for the EP you are preparing.'),
   ('2. Copy the start-of-day timing line', 'Paste the full timing line below the notice, including the End time and any ADD/MINUS information. Keep the original line; do not manually convert it.'),
   ('3. Click Run all', 'Click Run all. If PIP asks for a missing file or confirmation, resolve it and continue. When finished, read QC.')]),
+ 'timing_feedback': ('Adjust timing from playback feedback', [
+  ('Paste WV and End', 'After building the schedule, click Adjust timing beside Build schedule. Paste both WV and End lines from the playback check of that exact M3U. MINUS shortens; ADD extends. Click Adjust and export schedule.'),
+  ('Review the result', 'PIP refits the schedule using existing scheduling rules, exports M3U/QC, and reports remaining seconds. It may not find an exact fit. Check the new M3U on the playback computer. Identical pasted text is not applied twice. Settings are saved per EP; Reset to original targets removes the correction.')]),
  'start': ('Quick start & installation', [
   ('First use', 'Extract the complete ZIP to a writable folder. Run SCHEDULER.cmd. Keep the included runtime, INPUT.xlsx, ADS temps and sample files together. The package contains lightweight scheduling media, not the full broadcast videos.'),
   ('Before working', 'Make sure the source export folder is accessible on this computer. The default is W:\\@ SHOW EXPORTS. Check that INPUT.xlsx contains the correct day and ADS list. Save and close Excel after editing.'),
@@ -25,6 +29,7 @@ TOPICS = {
   ('Stop preparation', 'Stops the current copy operation and removes an unfinished partial copy. Completed copies remain available. Read the completion report for skipped files and their reasons.'),
   ('FN re-air', 'Selected FN parts from the previous EP are also copied to the current EP temp folder. Their local names use the current EP number, while event details, part numbers and REAIR remain. Original sources are not renamed.')]),
  'run': ('Run all / Scan EP / Create EP / Build schedule', [
+  ('Last result', 'PIP saves the last completed schedule result per EP, including drafts. Reopening restores the most recently saved EP, cycle tables and QC without rebuilding. Switching EP loads its saved result. Use Run all for a fresh result. Older runs made before this feature need one new build to create a snapshot.'),
   ('Run all', 'Runs Scan EP → Create EP → Build schedule → QC. Resolve missing or uncertain files before continuing. A completed run can still contain QC errors; read the report.'),
   ('Scan EP', 'Reads INPUT and available source files for the chosen EP. Shows source names, proposed local names and available parts. Scan again after source files or INPUT change.'),
   ('Create EP', 'Builds lightweight local media for scheduling, using real-file durations when available and reported durations for missing media. These temps are not broadcast footage. A changed or incomplete source may stop this step.'),
@@ -41,6 +46,7 @@ TOPICS = {
   ('Input workbook', 'Open INPUT to edit the program and daily ADS lists. Open the ADS table to inspect the catalog. Save spreadsheet changes, then Scan EP again.'),
   ('Missing or wrong names', 'The first check shows missing files and recognized files carrying the wrong EP. Accept for this EP explicitly approves the proposed local correction. The source filename stays unchanged. A replaced or changed source requires confirmation again.')]),
  'files': ('Files / Skip / Browse / accept a file', [
+  ('ADS group', 'Click ADS group beside Browse, add two or more files, and use the up/down arrows to set playback order. Save group. The scheduler uses one slot and the combined duration; M3U lists the files consecutively. Skip applies to the whole group. Reopen ADS group to change it; Browse replaces it with one file. M3U QC flags incomplete or reordered groups.'),
   ('Files / Skip', 'Reopens the current EP selections, including found files and skipped items. Use this when you want to change a previous choice.'),
   ('Browse', 'Choose a replacement for the displayed item. For an FN set, select P1A to load the matching complete set. Read the confirmation list to avoid mixing events or parts.'),
   ('Skip today', 'Saves the skip for this EP. The item is not used, and Run all does not keep prompting for it. Open Files / Skip to undo it.'),
@@ -82,6 +88,7 @@ TOPICS = {
   ('2. Starting show', 'Load the starting-show notice from step 0, or paste it if it is missing.'),
   ('3. Start Check', 'Click Start Check and read QC inside PIP. Checks compare the written list with INPUT and rules. NWN S1A/S1B/S1C may be combined in one entry. Later cycles follow Cycle 1 plus the changes stated in Word; unclear changes need confirmation. MT/24-hour timing and duration measurement are not checked by default.')]),
  'update': ('Update PIP / language / sharing', [
+  ('Update ADS temps', 'Use Update ADS temps in the sidebar. It reads INPUT_4 from the current INPUT or a workbook you select. Click Update ADS temps to create missing lightweight files in @ ADS 2. Existing media is kept. Missing durations or ambiguous names are listed for review. If all listed ADS already exist and no review is needed, it reports: Nothing new in the list.'),
   ('Update PIP', 'Updates the program from the published Hub feed. Finish the current operation before updating and follow the updater prompts. This is different from Update beside Prepare, which updates copied media.'),
   ('Language', 'The sidebar language selector remembers the choice for the next launch. Help defaults to that choice. Switch Vietnamese / English inside the help window at any time without changing the application language.'),
   ('Sharing the package', 'Send the complete portable ZIP to a new user. It includes the program runtime, INPUT and lightweight ADS/sample media. Each computer still needs access to the original source exports. Existing users can use Update PIP for published program/INPUT changes; that feed does not distribute the full ADS media library.'),

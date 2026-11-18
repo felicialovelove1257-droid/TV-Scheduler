@@ -35,6 +35,13 @@ def kind(item):
     rule=item.get('rule','')
     return 'TSER' if rule.startswith('teaser') else 'ad' if rule in ('event-ad','manual-ad') else 'Show'
 
+def replaced_missing_temp(row, item):
+    """An absent native slot's reported duration is a fallback, not a source override."""
+    return bool(item and row.get('native_key') and str(row.get('id','')).startswith('missing:')
+                and not row.get('source') and not row.get('custom') and not row.get('position_override')
+                and not item.get('draft_duration') and not item.get('local_fallback')
+                and item.get('source_path') and Path(item['source_path']).is_file())
+
 def catalog(config):
     from draft_input import expected,item_key
     items=config.get('_content_defaults',config['rename_preview']['items'])
@@ -55,6 +62,9 @@ def catalog(config):
                            kind='TSER' if label.startswith('TSER ') else 'Show',source='',duration='',
                            locked=True,custom=False,block='',anchor='',side='after',cycles='1,2,3,4,5,6',edited=False))
     saved={r['id']:r for r in load(config['episode'])['rows']}
+    for key,row in list(saved.items()):
+        if any(item_key(item)==row.get('native_key') and replaced_missing_temp(row,item) for item in items):
+            saved.pop(key)
     for i,r in enumerate(result):
         if r['id'] in saved:result[i]=dict(r,**saved.pop(r['id']))
     result.extend(saved.values())
@@ -95,18 +105,30 @@ def apply(config):
     raw=config['rename_preview']['items']
     if any(r.get('content_manual') for r in raw):raw=copy.deepcopy(config.get('_content_defaults',raw))
     raw=[r for r in raw if not r.get('content_manual')]
+    fn_teaser_enabled=config.get('schedule_settings',{}).get('tser_fn',True)
+    if not fn_teaser_enabled:
+        from draft_input import item_key
+        raw=[r for r in raw if item_key(r)!='TSER FN']
     config['_content_defaults']=copy.deepcopy(raw)
     saved=load(config['episode'])
     edits=[r for r in saved['rows'] if r.get('edited')]
     applied=[];excluded=[n for n in saved.get('retired_targets',[]) if n not in {r['target_name'] for r in raw}]
     occupied=set()
     for row in edits:
+        # Disabled native teaser slots must not be reintroduced by saved temp edits.
+        if not fn_teaser_enabled and (row.get('native_key')=='TSER FN' or row.get('label','').strip().upper()=='TSER FN'):
+            continue
         validate(row,config)
         base=next((r for r in raw if r['target_name'].casefold()==row.get('base','').casefold()),None)
         if base is None and row.get('native_key'):
             from draft_input import item_key
             candidates=[r for r in raw if item_key(r)==row['native_key']]
             if len(candidates)==1:base=candidates[0]
+        if replaced_missing_temp(row,base):
+            old_target=row.get('target_name','')
+            if old_target and old_target!=base['target_name'] and old_target not in {r['target_name'] for r in raw}:
+                excluded.append(old_target)
+            continue
         source=row.get('source','').strip()
         from draft_input import parse_duration
         seconds=None if source else parse_duration(row['duration'])

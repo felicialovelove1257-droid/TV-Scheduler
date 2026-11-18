@@ -192,6 +192,9 @@ def audit(path,episode,notice='',verify_media=False):
     from ep_content import qc_entries,classify_qc,audit_rows
     config['manual_content']=qc_entries(episode)
     assets=Assets(config);findings=[];rows=read_m3u(path)
+    if Path(path).suffix.lower()!='.docx':
+        from ad_groups import collapse
+        rows,group_findings=collapse(rows,assets);findings.extend(group_findings)
     document_info=rows[0].get('document_info',{})
     summary_cycles=document_info.get('summary_cycles',{})
     is_docx=Path(path).suffix.lower()=='.docx'

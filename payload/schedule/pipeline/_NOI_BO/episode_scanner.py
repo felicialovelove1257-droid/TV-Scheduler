@@ -665,7 +665,7 @@ def scan_episode(episode: int) -> dict:
     tser_fn=saved_teaser.get('tser_fn',previous_settings.get('tser_fn',checkbox_preferences().get('tser_fn',True)))
     result['schedule_settings']=dict(previous_settings)
     result['schedule_settings']['tser_fn']=tser_fn
-    for key in ('start_notice','air_start_notice'):
+    for key in ('start_notice','air_start_notice','timing_feedback'):
         if previous.get(key):result[key]=previous[key]
     if not tser_fn:
         from draft_input import item_key
@@ -741,6 +741,11 @@ def run_gui() -> None:
     flow_footer.pack(side='bottom',fill='x')
     from ui_language import add_selector
     add_selector(flow_footer)
+    def update_ads_temps():
+        from ads_temp_update import show_dialog
+        show_dialog(root)
+    from ui_language import get_language
+    ttk.Button(flow_footer,text='Cập nhật temp ADS' if get_language()=='vi' else 'Update ADS temps',command=update_ads_temps).pack(fill='x',pady=4)
     ttk.Button(flow_footer,text='ⓘ User Guide',command=lambda: show_help(root)).pack(fill='x',pady=(4,8))
     ttk.Separator(flow_footer).pack(fill='x',pady=(0,8))
     ttk.Button(flow_footer,text='Thứ tự xử lý PIP',command=lambda: show_flow(root)).pack(fill='x')
@@ -759,7 +764,8 @@ def run_gui() -> None:
     command_bar.grid(row=0, column=0, sticky="ew")
     ttk.Label(command_bar, text="Số EP").pack(side="left")
     from episode_date import episode_today
-    episode_var = tk.StringVar(value=str(episode_today()))
+    from last_schedule import latest_episode
+    episode_var = tk.StringVar(value=latest_episode(BASE_DIR/'configs',episode_today()))
     preview_var = tk.StringVar(value="")
     entry = ttk.Entry(command_bar, textvariable=episode_var, width=14)
     entry.pack(side="left", padx=(8, 10))
@@ -1099,6 +1105,8 @@ def run_gui() -> None:
         return True
 
     def do_scan() -> bool:
+        if restore_pending[0] is not None:
+            root.after_cancel(restore_pending[0]);restore_pending[0]=None
         try:
             show_page(0)
             episode = int(episode_var.get().strip())
@@ -1303,9 +1311,37 @@ def run_gui() -> None:
             root.config(cursor="")
         return False
 
+    def display_schedule(schedule, saved_report=None, saved_detail=None):
+        cycle1_tree.delete(*cycle1_tree.get_children())
+        from schedule_timing import clock as precise_clock
+        schedule_result.clear();schedule_result.update(schedule)
+        color_context=build_context(schedule)
+        all_cycles.delete(*all_cycles.get_children())
+        for c in schedule['cycles']:
+            for r in c['rows']:
+                tag,name=row_style(r,color_context)
+                all_cycles.insert('', 'end', values=(c['cycle'],r['block'],name,precise_clock(r['duration']),precise_clock(r['end_seconds'])),tags=(tag,) if tag else ())
+        export_status.set(('ĐẠT' if schedule['valid'] else 'BẢN NHÁP — xem QC')+'\n'+schedule['m3u_path']+'\nTimeline: '+schedule['timeline_path'])
+        report=saved_report if saved_report is not None else Path(schedule['qc_path']).read_text('utf-8-sig')
+        display_report(qc_text,report)
+        from qc_report import render_cycle_check
+        detail=saved_detail if saved_detail is not None else render_cycle_check(schedule,current_result.get('cycle_rules',{}))
+        display_report(detail_text,detail)
+        elapsed = 0.0
+        cycle1 = schedule["cycles"][0]["rows"]
+        def clock(seconds: float) -> str:
+            value = int(round(seconds))
+            return f"{value // 3600:02d}:{value % 3600 // 60:02d}:{value % 60:02d}"
+        for index, row in enumerate(cycle1, 1):
+            start = row.get('start_seconds',elapsed)
+            elapsed = row.get('end_seconds',start+row['duration'])
+            tag,name=row_style(row,color_context)
+            cycle1_tree.insert("", "end", values=(index, f"[B{row['block']}] {name}", clock(row["duration"]), clock(start), clock(elapsed)),tags=(tag,) if tag else ())
+        return report, detail
+
     def create_schedule(notify: bool = True) -> bool:
         show_page(2)
-        if not current_result:
+        if not current_result or str(current_result.get('episode'))!=episode_var.get().strip():
             messagebox.showinfo("Tạo lịch", "Hãy Scan EP trước.")
             return
         if not start_block_var.get():
@@ -1316,29 +1352,9 @@ def run_gui() -> None:
         cycle1_tree.delete(*cycle1_tree.get_children())
         try:
             schedule = build_schedule(Path(current_result["config_path"]))
-            from schedule_timing import clock as precise_clock
-            schedule_result.clear();schedule_result.update(schedule)
-            color_context=build_context(schedule)
-            all_cycles.delete(*all_cycles.get_children())
-            for c in schedule['cycles']:
-                for r in c['rows']:
-                    tag,name=row_style(r,color_context)
-                    all_cycles.insert('', 'end', values=(c['cycle'],r['block'],name,precise_clock(r['duration']),precise_clock(r['end_seconds'])),tags=(tag,) if tag else ())
-            export_status.set(('ĐẠT' if schedule['valid'] else 'BẢN NHÁP — xem QC')+'\n'+schedule['m3u_path']+'\nTimeline: '+schedule['timeline_path'])
-            report=Path(schedule['qc_path']).read_text('utf-8-sig')
-            display_report(qc_text,report)
-            from qc_report import render_cycle_check
-            display_report(detail_text,render_cycle_check(schedule,current_result.get('cycle_rules',{})))
-            elapsed = 0.0
-            cycle1 = schedule["cycles"][0]["rows"]
-            def clock(seconds: float) -> str:
-                value = int(round(seconds))
-                return f"{value // 3600:02d}:{value % 3600 // 60:02d}:{value % 60:02d}"
-            for index, row in enumerate(cycle1, 1):
-                start = row.get('start_seconds',elapsed)
-                elapsed = row.get('end_seconds',start+row['duration'])
-                tag,name=row_style(row,color_context)
-                cycle1_tree.insert("", "end", values=(index, f"[B{row['block']}] {name}", clock(row["duration"]), clock(start), clock(elapsed)),tags=(tag,) if tag else ())
+            report,detail=display_schedule(schedule)
+            from last_schedule import save as save_last_schedule
+            save_last_schedule(BASE_DIR/'configs',current_result,schedule,report,detail)
             if schedule["missing"] and notify:
                 messagebox.showwarning("Tạo lịch — bản nháp", '\n'.join(schedule['missing']) + '\n\nM3U: '+schedule['m3u_path']+'\nQC: '+schedule['qc_path'])
             elif not schedule["missing"] and notify:
@@ -1555,6 +1571,23 @@ def run_gui() -> None:
     ttk.Button(command_bar, text="Scan EP", command=do_scan).pack(side="left")
     ttk.Button(command_bar, text="Tạo EP", command=create_ep).pack(side="left", padx=(6, 0))
     ttk.Button(command_bar, text="Tạo lịch", command=create_schedule).pack(side="left", padx=(6, 0))
+    def adjust_timing():
+        if not current_result or episode_var.get().strip() != str(current_result['episode']):
+            messagebox.showinfo('Canh lại giờ', 'Hãy Scan EP trước.')
+            return
+        from timing_feedback import show
+        def rebuild_adjusted():
+            from timing_feedback import read_timeline,changes_report,show_changes,save_history
+            before=read_timeline(current_result)
+            if not create_schedule(notify=False):return False
+            report=changes_report(before,schedule_result)
+            save_history(current_result,before,schedule_result,report)
+            path=Path(current_result['config_path']).parent/f"EP_{current_result['episode']}_timing_changes.txt"
+            path.write_text(report,encoding='utf-8-sig')
+            show_changes(root,report)
+            return True
+        show(root, current_result, rebuild_adjusted)
+    ttk.Button(command_bar, text='Canh lại giờ', command=adjust_timing).pack(side='left', padx=(6, 0))
     help_button(command_bar,'settings')
     def manage_media_choices():
         if str(current_result.get('episode',''))!=episode_var.get().strip():
@@ -1651,6 +1684,45 @@ def run_gui() -> None:
     notice_entry.bind("<Return>", lambda _event: detect_start_block())
     bulk_text.focus_set()
     show_page(-1)
+    def restore_last_result():
+        from last_schedule import load
+        data=load(BASE_DIR/'configs',episode_var.get().strip())
+        current_result.clear();schedule_result.clear()
+        for widget in (tree,cycle1_tree,all_cycles):widget.delete(*widget.get_children())
+        output.delete('1.0','end')
+        display_report(qc_text,'');display_report(detail_text,'')
+        export_status.set('Chưa tạo lịch.')
+        preview_var.set('')
+        for index in range(len(step_names)):mark_step(index,False)
+        if not data:
+            build_status.set('Chưa có kết quả đã lưu cho EP này.')
+            show_page(-1)
+            return
+        current_result.update(data['config'])
+        current_result['config_path']=str(BASE_DIR/'configs'/f"EP_{data['episode']}_scan.json")
+        settings=current_result.get('schedule_settings',{})
+        fn_var.set(settings.get('fn',False));tser_fn_var.set(settings.get('tser_fn',True))
+        offset_var.set(str(settings.get('offset_seconds',0)))
+        mt_shift_var.set(str(settings.get('mt_show_shift',0)))
+        refresh_active_blocks()
+        start_block_var.set(str(settings.get('start_block') or ''))
+        notice_var.set(current_result.get('start_notice',''))
+        preview_var.set(current_result.get('rename_preview',{}).get('path',''))
+        output.insert('1.0',summary(current_result))
+        for index,item in enumerate(current_result.get('rename_preview',{}).get('items',[])):
+            tree.insert('', 'end',iid=str(index),values=(item['rule'],item['source_name'],item['target_name'],'☑' if is_max(item) else '☐'))
+        display_schedule(data['schedule'],data['report'],data['detail'])
+        build_status.set('Kết quả đã lưu: '+data['saved_at']+' — '+str(data['episode']))
+        show_page(2)
+    restore_pending=[None]
+    def queue_restore(*_args):
+        if restore_pending[0] is not None:root.after_cancel(restore_pending[0])
+        def restore():
+            restore_pending[0]=None
+            restore_last_result()
+        restore_pending[0]=root.after(300,restore)
+    episode_var.trace_add('write',queue_restore)
+    root.after_idle(restore_last_result)
     root.mainloop()
 
 

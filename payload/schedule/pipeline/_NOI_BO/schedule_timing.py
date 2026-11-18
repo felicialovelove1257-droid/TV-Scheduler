@@ -698,6 +698,7 @@ def finish_schedule(config, output, assets, directory):
     wv_before=marker('------------WV------------ (1).mp4',0,0)
     wv_after=marker('------------WV------------ (2) .mp4',0,0)
     target=72000-float(config.get('schedule_settings',{}).get('offset_seconds',0))
+    target=float(config.get('timing_feedback',{}).get('mt_target',target))
     if not 0<target<86400: raise ValueError('Giây lệch đầu ngày không hợp lệ')
     mt_target=target-(wv_before['duration'] if wv_before else 0)
     repeatable=list(dict.fromkeys([assets.resolve(a['name']) for a in config.get('ads',{}).get('items',[])
@@ -739,6 +740,8 @@ def finish_schedule(config, output, assets, directory):
         flat=combined
         timing.update(gap_seconds=gap,exact=abs(gap)<=0.001,boundary=solution[0])
     day_target=86400-float(config.get('schedule_settings',{}).get('offset_seconds',0))
+    day_target=float(config.get('timing_feedback',{}).get('day_target',day_target))
+    if not target<day_target<90000: raise ValueError('Invalid corrected end target')
     for r in flat:r.pop('_intro_disabled',None)
     full_day_rows=[dict(r) for r in flat]
     from reserve_ads import read_catalog,audit_catalog,write_audit
@@ -818,7 +821,7 @@ def finish_schedule(config, output, assets, directory):
     if expected_counts!=actual_counts: missing.append('Số lần ADS ưu tiên chưa khớp lịch đã cấu hình')
     priority_counts=[dict(name=item['name'],cycles=[sum(r.get('priority_name')==item['name'] and r['cycle']==c for r in flat) for c in range(1,7)]) for item in profile_items]
     from qc_report import combine_temporary_notices
-    output['reported_items'],missing=combine_temporary_notices(output.get('reported_items',[]),flat,missing)
+    output['reported_items'],missing=combine_temporary_notices(output.get('reported_items',[]),flat,missing,config.get('rename_preview',{}).get('items',[]))
     output.update(missing=sorted(set(missing)),valid=not missing,unresolved_ads=unresolved,timing=timing,
                   priority_policy='EP reference placements' if profile_items else 'Same ADS slots across cycles; adjust nearest MT cycle first',
                   expected_priority=expected_priority,priority_counts=priority_counts,duration=elapsed,day_end=day_end,
@@ -834,7 +837,8 @@ def finish_schedule(config, output, assets, directory):
     with csv_path.open('w',encoding='utf-8-sig',newline='') as f:
         writer=csv.writer(f);writer.writerow(['Cycle','Block','Kind','Name','Start','End','Duration','Path'])
         for r in flat:
-            lines.append(r['path'])
+            from ad_groups import playlist_paths
+            lines.extend(playlist_paths(r['path'],assets))
             writer.writerow([r['cycle'],r['block'],r['kind'],r['name'],clock(r['start_seconds']),clock(r['end_seconds']),r['duration'],r['path']])
     m3u.write_text('\n'.join(lines)+'\n','utf-8-sig')
     output.update(m3u_path=str(m3u),timeline_path=str(csv_path),qc_path=str(qc))

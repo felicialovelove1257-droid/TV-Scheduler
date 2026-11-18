@@ -281,7 +281,13 @@ def issues(config, result=None, include_ready=False):
         found_ad=assets._resolve_unfiltered(ad['name']) if include_ready else assets.resolve(ad['name'])
         if include_ready or not found_ad:
             detail=ad.get('priority_class','OPTIONAL')
-            if found_ad:detail+='\n'+str(found_ad)
+            if found_ad:
+                from ad_groups import identity
+                group=getattr(assets,'groups',{}).get(identity(found_ad))
+                if group:
+                    seconds=sum(p['seconds'] for p in group['parts'])
+                    detail+=f"\nGroup: {len(group['parts'])} files — {int(seconds)//60}:{int(seconds)%60:02}\n"+' → '.join(Path(p['path']).name for p in group['parts'])
+                else:detail+='\n'+str(found_ad)
             out.append(dict(kind='ad',name=ad['name'],detail=detail,ready=bool(found_ad)))
     if result:
         for ad in result.get('unresolved_ads',[]):
@@ -380,11 +386,15 @@ def resolve_dialog(parent, config, result=None, manage=False):
         row_status(idx,message,skip or issue.get('ready',False))
         status.set('Saved for this EP. Run all to apply.' if manage else 'Saved. Click Recheck and continue to rebuild the schedule.')
     skip_buttons={}
-    def choose(idx,folder=False):
+    def choose(idx,folder=False,group=False):
         if state['busy']:return
         issue=pending[idx]
-        selected=(filedialog.askdirectory(parent=window,title='Select the S1B folder') if folder else
-                  filedialog.askopenfilename(parent=window,title='Select file for '+issue['name'],filetypes=[('Media files','*.mp4 *.mov *.mxf *.mkv *.avi *.wav *.mp3'),('All files','*.*')]))
+        if group:
+            from ad_groups import choose_group
+            selected=choose_group(window,issue['name'])
+        else:
+            selected=(filedialog.askdirectory(parent=window,title='Select the S1B folder') if folder else
+                      filedialog.askopenfilename(parent=window,title='Select file for '+issue['name'],filetypes=[('Media files','*.mp4 *.mov *.mxf *.mkv *.avi *.wav *.mp3'),('All files','*.*')]))
         if not selected:return
         if issue['kind']=='fn':
             try:paths,_=fn_set(selected)
@@ -395,7 +405,10 @@ def resolve_dialog(parent, config, result=None, manage=False):
         for child in controls:child.configure(state='disabled')
         def work():
             try:
-                if issue['kind']=='fn':rows=select_fn(config,selected)
+                if group:
+                    from ad_groups import save_group
+                    rows=save_group(config,selected,issue['name'])
+                elif issue['kind']=='fn':rows=select_fn(config,selected)
                 elif issue['kind']=='teaser':rows=select_teaser(config,selected,issue['name'])
                 else:rows=select_ad(config,selected,issue['name'])
                 messages.put((True,rows))
@@ -417,7 +430,13 @@ def resolve_dialog(parent, config, result=None, manage=False):
                         set_one_time_ad_skip(config['episode'],issue['name'],False)
                     issue['skipped']=False;issue['skipped_mode']=''
                     skip_buttons[idx].configure(text='Skip ▾')
-                row_status(idx,'✓ Checked and saved\n'+selected,True)
+                row_status(idx,'✓ Checked and saved\n'+('\n'.join(selected) if group else selected),True)
+                if group:
+                    from schedule_assets import Assets
+                    from ad_groups import identity
+                    refreshed=Assets(config);saved=refreshed.groups[identity(value[0]['target_path'])]
+                    seconds=int(round(saved['seconds']))
+                    row_status(idx,f"✓ Group: {len(saved['parts'])} files — {seconds//60}:{seconds%60:02}\n"+' → '.join(Path(p['path']).name for p in saved['parts']),True)
                 status.set('Saved: '+', '.join(r['target_name'] for r in value))
             else:row_status(idx,'✗ '+value);status.set('Selection failed; choose another file or retry.')
         threading.Thread(target=work,daemon=True).start();window.after(100,poll)
@@ -437,6 +456,10 @@ def resolve_dialog(parent, config, result=None, manage=False):
                 button.pack(side='left');button._accept_var=var;controls.append(button)
                 continue
             button=ttk.Button(actions,text='Browse...',command=lambda idx=i:choose(idx));button.pack(side='left');controls.append(button)
+            if r['kind']=='ad':
+                from ui_language import get_language
+                button=ttk.Button(actions,text='Chọn nhóm ADS' if get_language()=='vi' else 'ADS group...',command=lambda idx=i:choose(idx,group=True))
+                button.pack(side='left',padx=3);controls.append(button)
             if r['kind'] in ('ad','teaser'):
                 mode=r.get('skipped_mode','')
                 text='Skipped today ▾' if mode=='today' else 'Skipped once ▾' if mode=='once' else 'Skip ▾'

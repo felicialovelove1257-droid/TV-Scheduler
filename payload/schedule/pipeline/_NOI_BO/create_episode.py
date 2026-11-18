@@ -330,6 +330,15 @@ def create_episode(config_path: Path) -> dict:
             if staged.name in replacing and marker.exists():marker.unlink()
             created += 1
 
+        # Preserve source-temp provenance even after the local Daily Scroll is renamed.
+        for item in items:
+            if item.get('rule')!='daily-scroll':continue
+            target=Path(item['target_path'])
+            marker=target.with_suffix('.mp4.source-temp.json')
+            if re.search(r'\bDN[ _-]+TEMP\b',item.get('source_name',''),re.I):
+                marker.write_text(json.dumps({'source_name':item['source_name']},ensure_ascii=False),'utf-8')
+            elif not item.get('local_fallback'):
+                marker.unlink(missing_ok=True)
         special_results = []
         special_created = 0
         special_kept = 0
